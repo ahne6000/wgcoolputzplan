@@ -4,6 +4,7 @@ from app.database import get_session
 from app.models import TaskLog
 from typing import Optional
 
+
 router = APIRouter()
 
 
@@ -13,3 +14,4 @@ def list_logs(limit: Optional[int] = 1000, session: Session = Depends(get_sessio
     if limit:
         stmt = stmt.limit(limit)
     return session.exec(stmt).all()
+
