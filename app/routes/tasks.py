@@ -410,7 +410,7 @@ def get_recent_task_versions(task_id: int, session: Session = Depends(get_sessio
         select(TaskVersion)
         .where(TaskVersion.task_id == task_id)
         .order_by(TaskVersion.timestamp.desc())
-        .limit(3)
+        .limit(10)
     )
     versions = session.exec(stmt).all()
     return versions

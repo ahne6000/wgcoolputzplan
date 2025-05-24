@@ -8,6 +8,7 @@ from sqlalchemy import Column, select
 from sqlmodel import JSON
 from app.enums import TaskMode, TaskType
 
+
 # --- Models ---
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -94,14 +95,12 @@ class AssignmentQueue(SQLModel, table=True):
     user_queue: List[int] = Field(default_factory=list, sa_column=Column(JSON))  # ✅ Neu!
 
 
-
 class TaskVersion(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     task_id: int = Field(foreign_key="task.id")
-    version: int  # Versionsnummer
+    version: int
     user_id: Optional[int] = Field(default=None, foreign_key="user.id")
     user_name: Optional[str] = None
     action: str
-    timestamp: datetime = Field(default_factory=dict, sa_type=JSON)
-    data: Dict[str, Any] = Field(default_factory=dict, sa_type=JSON)  # JSON field to store the complete state of the task
-    
+    timestamp: datetime = Field(default_factory=datetime.utcnow)  # ✅ korrekt!
+    data: Dict[str, Any] = Field(default_factory=dict, sa_type=JSON)
