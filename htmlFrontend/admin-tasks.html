@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Admin – Aufgabenverwaltung</title>
+<style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      display: flex;
+      height: 100vh;
+    }
+    nav {
+      width: 10%;
+      background-color: #f4f4f4;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      border-right: 1px solid #ccc;
+    }
+    nav a {
+      text-decoration: none;
+      color: black;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    .main {
+      width: 90%;
+      padding: 1rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 2rem;
+    }
+    th, td {
+      text-align: left;
+      border-bottom: 1px solid #ccc;
+      padding: 0.5rem;
+    }
+    .details {
+      display: none;
+      background: #f9f9f9;
+      padding: 1rem;
+      border: 1px solid #ccc;
+    }
+    button {
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+<nav id="sidebar"></nav>
+<div class="main">
+<h2>🧹 Aufgabenverwaltung</h2>
+<section>
+<label for="taskName">Name</label>
+<input id="taskName" type="text"/>
+<label for="taskCategory">Kategorie</label>
+<select id="taskCategory">
+<option value="recurring">recurring</option>
+<option value="one_time">one_time</option>
+</select>
+<label for="taskCredit">Wertigkeit (Credit)</label>
+<input id="taskCredit" type="number"/>
+<label for="taskDuration">Standard-Fälligkeit in Tagen</label>
+<input id="taskDuration" type="number" value="7"/>
+<label for="taskMode">Modus</label>
+<select id="taskMode">
+<option value="free">free</option>
+<option value="assigned">assigned</option>
+</select>
+<button onclick="createTask()">Task erstellen</button>
+</section>
+<h3>📋 Alle Aufgaben</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Titel</th>
+<th>Std. Dauer [Tage]</th>
+<th>Fällig bis</th>
+<th>Credits</th>
+<th>Modus</th>
+<th>Typ</th>
+<th>Zugewiesen an</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody id="taskTable"></tbody>
+</table>
+</div>
+<script>
+let users = [];
+
+async function fetchTaskHistory(taskId) {
+  const res = await fetch(`/api/tasks/versions/${taskId}`);
+  if (!res.ok) return [];
+  return await res.json();
+}
+
+async function fetchUsers() {
+  const res = await fetch('/api/users/');
+  if (res.ok) users = await res.json();
+}
+
+async function fetchTasks() {
+  const res = await fetch('/api/tasks/');
+  if (!res.ok) return [];
+  return await res.json();
+}
+
+async function loadTasks() {
+  await fetchUsers();
+  const tasks = await fetchTasks();
+  const table = document.getElementById('taskTable');
+  table.innerHTML = '';
+
+  tasks.forEach(task => {
+    const row = document.createElement('tr');
+    row.style.cursor = 'pointer';
+
+    row.innerHTML = `
+      <td>${task.id}</td>
+      <td>${task.title}</td>
+      <td>${task.default_duration_days || '-'}</td>
+      <td>${task.due_date ? new Date(task.due_date).toLocaleDateString() : '-'}</td>
+      <td>${task.credits}</td>
+      <td>${task.task_type}</td>
+      <td>${task.mode}</td>
+      <td>${getUserName(task.user_id)}</td>
+      <td>${task.is_done ? '✅ Erledigt' : '❗ Offen'}</td>
+    `;
+
+    const details = document.createElement('tr');
+    const detailsTd = document.createElement('td');
+    detailsTd.colSpan = 9;
+    detailsTd.innerHTML = `
+      <div class="details">
+        <label>Assigned User</label>
+        <select id="assign-${task.id}">
+          <option value="">Kein Benutzer</option>
+          ${users.map(u => `<option value="${u.id}" ${u.id === task.user_id ? 'selected' : ''}>${u.name}</option>`).join('')}
+        </select>
+
+        <label>Credits</label>
+        <input type="number" id="credit-${task.id}" value="${task.credits}">
+
+        <label>Standard-Fälligkeit (in Tagen)</label>
+        <input type="number" id="duration-${task.id}" value="${task.default_duration_days}">
+
+        <label>Typ</label>
+        <select id="type-${task.id}">
+          <option value="free" ${task.task_type === 'free' ? 'selected' : ''}>Free</option>
+          <option value="assigned" ${task.task_type === 'assigned' ? 'selected' : ''}>Assigned</option>
+        </select>
+
+        <label>Mode</label>
+        <select id="mode-${task.id}">
+          <option value="one_time" ${task.mode === 'one_time' ? 'selected' : ''}>One Time</option>
+          <option value="recurring" ${task.mode === 'recurring' ? 'selected' : ''}>Recurring</option>
+        </select>
+
+        <button onclick="saveTask(${task.id})">Speichern</button>
+        <button onclick="deleteTask(${task.id})">🗑 Löschen</button>
+      </div>
+    `;
+    details.appendChild(detailsTd);
+
+    row.addEventListener('click', async () => {
+      const detailDiv = detailsTd.querySelector('.details');
+      if (detailDiv.style.display === 'block') {
+        detailDiv.style.display = 'none';
+        return;
+      }
+
+      detailDiv.style.display = 'block';
+
+      const history = await fetchTaskHistory(task.id);
+      const maxVisible = 5;
+      let showAll = false;
+      const historyContainer = document.createElement('div');
+
+      function renderHistory() {
+        let historyHTML = "";
+        const visibleEntries = showAll ? history : history.slice(0, maxVisible);
+
+        for (let i = 0; i < visibleEntries.length; i++) {
+          const h = visibleEntries[i];
+          const next = visibleEntries[i + 1];
+
+          const fromUserId = h.user_id ?? h.data?.last_done_by ?? h.data?.user_id;
+          const fromUser = getUserName(fromUserId);
+
+          const toUserId = next?.user_id ?? next?.data?.user_id;
+          const toUser = getUserName(toUserId);
+
+          let extraInfo = "";
+
+          if (h.action === "mark_done") {
+            if (task.task_type === "assigned" && fromUser && toUser && fromUser !== toUser) {
+              extraInfo = `
+                <div style="margin-top: 0.25rem;">
+                  🔁 <span style="font-weight: bold;">Übergabe:</span>
+                  <span style="color:#444;">${fromUser}</span> →
+                  <span style="color:#007bff;">${toUser}</span>
+                </div>
+              `;
+            } else if (fromUser) {
+              extraInfo = `
+                <div style="margin-top: 0.25rem; color:#666;">
+                  ✅ Erledigt von <strong>${fromUser}</strong>
+                </div>
+              `;
+            }
+          }
+
+          historyHTML += `
+            <div style="margin-top: 0.5rem; padding: 0.5rem; border-left: 3px solid #888; background: #fff;">
+              <div style="margin-bottom: 0.25rem;">
+                <strong>🕒 ${new Date(h.timestamp).toLocaleString()}</strong> —
+                <span style="background:#eee; padding:2px 6px; border-radius:4px;">${h.action}</span>
+              </div>
+              ${h.user_name ? `<div>👤 <strong>Aktion durch:</strong> ${h.user_name}</div>` : ""}
+              ${extraInfo}
+            </div>
+          `;
+        }
+
+
+        historyContainer.innerHTML = `<h4>🕘 Historie</h4>${historyHTML}`;
+      }
+
+      renderHistory();
+      detailDiv.appendChild(historyContainer);
+    });
+
+    table.appendChild(row);
+    table.appendChild(details);
+  });
+}
+
+function getUserName(id) {
+  const user = users.find(u => u.id === id);
+  return user ? user.name : '-';
+}
+
+async function saveTask(taskId) {
+  const userId = document.getElementById(`assign-${taskId}`).value;
+  const credits = document.getElementById(`credit-${taskId}`).value;
+  const duration = document.getElementById(`duration-${taskId}`).value;
+  const type = document.getElementById(`type-${taskId}`).value;
+  const mode = document.getElementById(`mode-${taskId}`).value;
+
+  await fetch(`/api/tasks/${taskId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId ? parseInt(userId) : null,
+      credits: parseInt(credits),
+      task_type: type,
+      mode: mode,
+      default_duration_days: duration ? parseInt(duration) : null
+    })
+  });
+  alert('Aufgabe gespeichert.');
+  loadTasks();
+}
+
+async function deleteTask(taskId) {
+  if (!confirm('Wirklich löschen?')) return;
+  await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+  alert('Aufgabe gelöscht.');
+  loadTasks();
+}
+
+async function createTask() {
+  const days = parseInt(document.getElementById('taskDuration').value, 10);
+  const due = new Date();
+  due.setDate(due.getDate() + days);
+  const body = {
+    title: document.getElementById('taskName').value,
+    description: '',
+    due_date: due.toISOString(),
+    default_duration_days: days,
+    credits: Number(document.getElementById('taskCredit').value),
+    task_type: document.getElementById('taskMode').value,
+    mode: document.getElementById('taskCategory').value,
+    urgency_level: 0,
+    user_id: null
+  };
+  await fetch('/api/tasks/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  alert("Task erfolgreich erstellt!");
+  loadTasks();
+}
+
+async function renderSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const res = await fetch('menu.html');
+  const html = await res.text();
+  sidebar.innerHTML = html;
+
+  const userLinks = document.getElementById('userLinks');
+  if (userLinks) {
+    const usersRes = await fetch('/api/users/');
+    const users = await usersRes.json();
+
+    users.filter(u => u.active).forEach(user => {
+      const link = document.createElement('a');
+      link.href = `user.html?id=${user.id}`;
+
+      let imgUrl = user.profile_image_url;
+      if (!imgUrl || imgUrl === 'null') {
+        imgUrl = '/media/profiles/fallback.jpg';
+      } else if (imgUrl.includes('/media/')) {
+        imgUrl = '/media/' + imgUrl.split('/media/').pop();
+      }
+
+      const img = document.createElement('img');
+      img.src = imgUrl;
+      img.alt = user.name;
+      img.className = 'avatar';
+
+      const text = document.createTextNode(user.name);
+
+      link.appendChild(img);
+      link.appendChild(text);
+      userLinks.appendChild(link);
+    });
+  }
+}
+
+renderSidebar();
+loadTasks();
+</script>
+</body>
+</html>

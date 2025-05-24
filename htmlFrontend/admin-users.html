@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin – Benutzerverwaltung</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      display: flex;
+      height: 100vh;
+    }
+    nav {
+      width: 10%;
+      background-color: #f4f4f4;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      border-right: 1px solid #ccc;
+    }
+    nav a {
+      text-decoration: none;
+      color: black;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    .main {
+      width: 90%;
+      padding: 1rem;
+    }
+    section {
+      margin-bottom: 2rem;
+    }
+    label {
+      display: block;
+      margin-top: 1rem;
+      font-weight: bold;
+    }
+    input, select {
+      display: block;
+      margin-top: 0.5rem;
+      padding: 0.5rem;
+      width: 100%;
+      max-width: 300px;
+    }
+    button {
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #ccc;
+      margin: 2rem 0;
+    }
+    .user-row {
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+      justify-content: start;
+      padding: 0.5rem;
+      border-radius: 5px;
+    }
+    .active {
+      background-color: #e0ffe0;
+    }
+    .inactive {
+      background-color: #f0f0f0;
+      opacity: 0.6;
+    }
+  </style>
+</head>
+<body>
+  <nav id="sidebar"></nav>
+  <div class="main">
+    <h2>👤 Benutzerverwaltung</h2>
+
+    <section>
+      <label for="userName">Name</label>
+      <input id="userName" type="text">
+      <button onclick="createUser()">Benutzer erstellen</button>
+    </section>
+
+    <hr>
+
+    <section>
+      <h3>📸 Profilbild hochladen</h3>
+      <label for="userSelect">Benutzer auswählen</label>
+      <select id="userSelect"></select>
+      <input type="file" id="uploadInput">
+      <button onclick="uploadPhoto()">Foto hochladen</button>
+    </section>
+
+    <hr>
+
+    <section>
+      <h3>📋 Benutzerliste</h3>
+      <div id="userList" style="display: flex; flex-direction: column; gap: 0.5rem; font-family: monospace;"></div>
+    </section>
+  </div>
+
+  <script>
+    let users = [];
+
+    async function fetchUsers() {
+      const res = await fetch('/api/users/');
+      if (res.ok) users = await res.json();
+      updateUserDropdown();
+      updateUserList();
+    }
+
+    async function createUser() {
+      const name = document.getElementById('userName').value;
+      if (!name.trim()) {
+        alert("Bitte einen Namen eingeben.");
+        return;
+      }
+      await fetch('/api/users/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      document.getElementById('userName').value = '';
+      alert("Benutzer erfolgreich erstellt!");
+      fetchUsers();
+    }
+
+    function updateUserDropdown() {
+      const select = document.getElementById('userSelect');
+      select.innerHTML = '';
+      users.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.id;
+        opt.textContent = u.name;
+        select.appendChild(opt);
+      });
+    }
+
+    function updateUserList() {
+      const container = document.getElementById('userList');
+      container.innerHTML = '';
+      users.forEach(user => {
+        const row = document.createElement('div');
+        row.className = 'user-row ' + (user.active ? 'active' : 'inactive');
+
+        const avatar = document.createElement('img');
+        avatar.src = user.profile_image_url ? user.profile_image_url.replace('/var/www//putzplan', '') : '/media/profiles/fallback.jpg';
+        avatar.alt = user.name;
+        avatar.style.width = '32px';
+        avatar.style.height = '32px';
+        avatar.style.objectFit = 'cover';
+        avatar.style.borderRadius = '50%';
+
+        const name = document.createElement('span');
+        name.textContent = user.name;
+        name.style.fontWeight = 'bold';
+        name.style.width = '150px';
+
+        const points = document.createElement('span');
+        points.textContent = `Credits: ${user.points}`;
+        points.style.width = '100px';
+
+        const statusBtn = document.createElement('button');
+        statusBtn.textContent = user.active ? 'Deaktivieren' : 'Aktivieren';
+        statusBtn.onclick = async () => {
+          await fetch(`/api/users/${user.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ active: !user.active })
+          });
+          fetchUsers();
+        };
+
+        row.appendChild(avatar);
+        row.appendChild(name);
+        row.appendChild(points);
+        row.appendChild(statusBtn);
+
+        container.appendChild(row);
+      });
+    }
+
+    async function uploadPhoto() {
+      const userId = document.getElementById('userSelect').value;
+      const file = document.getElementById('uploadInput').files[0];
+      if (!file) return alert("Bitte eine Datei auswählen.");
+      const formData = new FormData();
+      formData.append('file', file);
+      await fetch(`/api/users/${userId}/upload-photo`, {
+        method: 'POST',
+        body: formData
+      });
+      alert("Foto hochgeladen!");
+      fetchUsers();
+    }
+
+    async function renderSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const res = await fetch('menu.html');
+  const html = await res.text();
+  sidebar.innerHTML = html;
+
+  const userLinks = document.getElementById('userLinks');
+  if (userLinks) {
+    const usersRes = await fetch('/api/users/');
+    const users = await usersRes.json();
+
+    users.filter(u => u.active).forEach(user => {
+      const link = document.createElement('a');
+      link.href = `user.html?id=${user.id}`;
+
+      let imgUrl = user.profile_image_url;
+      if (!imgUrl || imgUrl === 'null') {
+        imgUrl = '/media/profiles/fallback.jpg';
+      } else if (imgUrl.includes('/media/')) {
+        imgUrl = '/media/' + imgUrl.split('/media/').pop();
+      }
+
+      const img = document.createElement('img');
+      img.src = imgUrl;
+      img.alt = user.name;
+      img.className = 'avatar';
+
+      const text = document.createTextNode(user.name);
+
+      link.appendChild(img);
+      link.appendChild(text);
+      userLinks.appendChild(link);
+    });
+  }
+}
+
+
+    renderSidebar();
+    fetchUsers();
+  </script>
+</body>
+</html>
