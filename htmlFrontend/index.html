@@ -45,15 +45,23 @@
       padding: 1rem;
       color: white;
       display: flex;
-      justify-content: space-between;
-      align-items: center;
+      flex-direction: column;
+      gap: 0.5rem;
+      cursor: pointer;
     }
     .task-content {
       display: flex;
-      flex-direction: row;
-      gap: 2rem;
+      justify-content: space-between;
       align-items: center;
-      flex-wrap: wrap;
+      width: 100%;
+    }
+    .task-details {
+      display: none;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .task.show-details .task-details {
+      display: flex;
     }
     .green { background-color: #6da86d; }
     .yellow { background-color: #e5d97d; color: black; }
@@ -69,6 +77,10 @@
     .btn:hover {
       background: #ddd;
     }
+    .recurring-icon {
+      animation: spin 2s linear infinite;
+      display: inline-block;
+    }
     .flag {
       background-color: white;
       color: red;
@@ -77,15 +89,7 @@
       border-radius: 4px;
       padding: 0.2rem 0.5rem;
       display: inline-block;
-      margin-right: 1rem;
-    }
-    .icon {
-      font-weight: bold;
       margin-right: 0.5rem;
-    }
-    .recurring-icon {
-      animation: spin 2s linear infinite;
-      display: inline-block;
     }
     @keyframes spin {
       from { transform: rotate(0deg); }
@@ -120,11 +124,11 @@
     async function getNextUser(taskId) {
       try {
         const res = await fetch(`/api/users/${taskId}/next-recurring-user`);
-        if (!res.ok) return 'Keine Info';
+        if (!res.ok) return 'unassigned';
         const data = await res.json();
-        return data.next_user && data.next_user.name ? data.next_user.name : 'Keine Info';
+        return data.next_user && data.next_user.name ? data.next_user.name : 'unassigned';
       } catch (e) {
-        return 'Fehler';
+        return 'unassigned';
       }
     }
 
@@ -228,34 +232,49 @@
         const div = document.createElement('div');
         div.className = `task ${task.urgency_class}`;
 
-        let flags = '';
-        if (task.escalation_level === 1) flags = '<div class="flag">Putzen</div>';
-        if (task.escalation_level === 2) flags = '<div class="flag">Putzen</div><div class="flag">Putzen</div>';
-
-        let nextUserInfo = '';
         let recurringIcon = '';
-        if (task.mode === 'recurring' && task.task_type === 'assigned') {
-          const nextUser = await getNextUser(task.id);
-          nextUserInfo = `<span>Als nächstes: ${nextUser}</span>`;
-          recurringIcon = '<span class="recurring-icon">🔄</span>';
+        let nextUserInfo = '';
+        let flags = '';
+
+        if (task.task_type === 'assigned') {
+          if (task.mode === 'recurring') {
+            recurringIcon = '<span class="recurring-icon">🔄</span>';
+            nextUserInfo = await getNextUser(task.id);
+          } else {
+            nextUserInfo = 'unassigned';
+          }
         }
 
-        div.innerHTML = `
-          <div class="task-content">
-            ${flags}
-            ${recurringIcon}
-            <span><strong>${task.title}</strong></span>
-            <span>Wer ist dran?: ${getUserNameById(task.user_id)}</span>
-            ${nextUserInfo}
-            <span>Fällig in: ${task.remaining_days} Tage</span>
-          </div>
+        if (task.escalation_level === 1) flags = '<span class="flag">Putzen</span>';
+        if (task.escalation_level === 2) flags = '<span class="flag">Putzen</span><span class="flag">Putzen</span>';
+
+        const taskContent = document.createElement('div');
+        taskContent.className = 'task-content';
+        taskContent.innerHTML = `
+          <span>${flags}<strong>${task.title}</strong> ${recurringIcon}</span>
+          <span>${getUserNameById(task.user_id)}</span>
+          <button class="btn" onclick="event.stopPropagation(); markDone(${task.id})">✔ Erledigt</button>
+        `;
+
+        const taskDetails = document.createElement('div');
+        taskDetails.className = 'task-details';
+        taskDetails.innerHTML = `
+          <span>${task.description || ''}</span>
+          ${task.task_type === 'assigned' ? `<span>Als nächstes: ${nextUserInfo}</span>` : ''}
+          <span>Fällig in: ${task.remaining_days} Tage</span>
           <div style="display:flex; gap:0.5rem;">
-            <button class="btn" onclick="voteEscalate(${task.id})">Putzen!</button>
-            <button class="btn" onclick="voteUrgency(${task.id}, 'up')">⬆️</button>
-            <button class="btn" onclick="voteUrgency(${task.id}, 'down')">⬇️</button>
-            <button class="btn" onclick="markDone(${task.id})">✔ Erledigt</button>
+            <button class="btn" onclick="event.stopPropagation(); voteEscalate(${task.id})">Putzen!</button>
+            <button class="btn" onclick="event.stopPropagation(); voteUrgency(${task.id}, 'up')">⬆️</button>
+            <button class="btn" onclick="event.stopPropagation(); voteUrgency(${task.id}, 'down')">⬇️</button>
           </div>
         `;
+
+        div.appendChild(taskContent);
+        div.appendChild(taskDetails);
+
+        div.addEventListener('click', () => {
+          div.classList.toggle('show-details');
+        });
 
         container.appendChild(div);
       }
