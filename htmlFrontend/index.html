@@ -162,6 +162,36 @@
           userLinks.appendChild(link);
         });
       }
+
+      fetch('/api/putzplanVersion')
+        .then(response => response.json())
+        .then(data => {
+          let versionText = '';
+          if (typeof data === 'string') {
+            versionText = data;
+          } else if (data.message) {
+            versionText = data.message;
+          } else {
+            versionText = JSON.stringify(data);
+          }
+
+          const versionDiv = document.createElement('div');
+          versionDiv.style.fontSize = '0.8rem';
+          versionDiv.style.color = '#888';
+          versionDiv.style.marginTop = 'auto';
+          versionDiv.style.paddingTop = '1rem';
+          versionDiv.textContent = versionText;
+          sidebar.appendChild(versionDiv);
+        })
+        .catch(() => {
+          const versionDiv = document.createElement('div');
+          versionDiv.style.fontSize = '0.8rem';
+          versionDiv.style.color = '#888';
+          versionDiv.style.marginTop = 'auto';
+          versionDiv.style.paddingTop = '1rem';
+          versionDiv.textContent = 'unbekannt';
+          sidebar.appendChild(versionDiv);
+        });
     }
 
     async function markDone(taskId) {

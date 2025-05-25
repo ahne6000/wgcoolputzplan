@@ -17,3 +17,17 @@
 
 <a href="logs.html">📄 Logs</a>
 
+
+<div id="versionInfo" style="font-size: 0.8rem; color: #888; margin-top: 1rem;"></div>
+
+<script>
+  fetch('/api/putzplanVersion')
+    .then(response => response.json())
+    .then(data => {
+      const versionText = typeof data === 'string' ? data : JSON.stringify(data);
+      document.getElementById('versionInfo').textContent = 'Version: ' + versionText;
+    })
+    .catch(() => {
+      document.getElementById('versionInfo').textContent = 'Version: unbekannt';
+    });
+</script>
