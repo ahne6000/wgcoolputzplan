@@ -7,12 +7,6 @@ Ein browserbasierter Haushaltsplaner auf Basis von **FastAPI**, **SQLite**, **HT
 * **Uvicorn** (ASGI Server)
 * **Caddy** (Webserver + Reverse Proxy)
 * **SQLite** (leichtgewichtige Datenbank)
-* **HTML/JS** (kein Framework; klassisches, responsives Frontend)
+* **React** 
 
 ---
-
-
-TODO: 
-
-- Add systemd files 
-- Install script setting up venv, copying and activating systemd, copy html files to appropriate place and changing caddy config 
