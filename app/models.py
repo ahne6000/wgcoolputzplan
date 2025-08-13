@@ -6,7 +6,7 @@ from sqlmodel import SQLModel, Field
 from typing import Optional, List
 from sqlalchemy import Column, select
 from sqlmodel import JSON
-from app.enums import TaskMode, TaskType
+from app.enums import TaskType
 
 
 # --- Models ---
@@ -33,7 +33,6 @@ class Task(SQLModel, table=True):
     default_duration_days: int = 7
     credits: int = 1
     task_type: TaskType = TaskType.free
-    mode: TaskMode = TaskMode.recurring
     escalation_level: int = 0  # default 0, kann erhöht werden
     duration_modifier: int = 0  # NEU
 
@@ -69,15 +68,6 @@ class Task(SQLModel, table=True):
     
     def get_next_version(self) -> int: 
         return self.iteration+1
-    '''
-    def get_next_version(self, session: Session) -> int:
-        latest_version = session.exec(
-            select(TaskVersion)
-            .where(TaskVersion.task_id == self.id)
-            .order_by(TaskVersion.version.desc())
-        ).first()
-        return latest_version.version + 1 if latest_version else 1
-    '''
 
 
 class TaskLog(SQLModel, table=True):

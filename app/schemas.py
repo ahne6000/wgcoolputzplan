@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional, Any, List
 from typing import Optional, Any
 
-from app.enums import TaskMode, TaskType
+from app.enums import TaskType
 
 class TaskCreate(SQLModel):
     title: str
@@ -12,7 +12,6 @@ class TaskCreate(SQLModel):
     default_duration_days: int = 7
     credits: int = 1
     task_type: TaskType = TaskType.free
-    mode: TaskMode = TaskMode.recurring
     urgency_level: int = 0
     user_id: Optional[int] = None
 
@@ -25,7 +24,6 @@ class TaskRead(SQLModel):
     default_duration_days: int
     credits: int
     task_type: TaskType
-    mode: TaskMode
     remaining_days: int
     escalation_level: int = 0  # default 0, kann erhöht werden
 

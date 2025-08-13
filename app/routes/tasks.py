@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 from datetime import datetime, timedelta
 
-from app.enums import TaskMode
+from app.enums import TaskType
 from app.models import Task, AssignmentQueue, TaskVersion, User
 from app.schemas import TaskCreate, TaskRead, TaskUpdate
 from app.database import get_session
@@ -22,7 +22,7 @@ def calculate_remaining_days(task: Task) -> int:
     today = datetime.utcnow().date()
 
     # 1️⃣ Einmalige Aufgaben: Abstand bis zum due_date
-    if task.mode == TaskMode.one_time:
+    if task.mode == TaskType.one_time:
         if task.due_date:
             return max((task.due_date.date() - today).days, 0)
         # ohne due_date kann man nichts rechnen
