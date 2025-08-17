@@ -5,7 +5,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
 from sqlalchemy.orm import Session
-
+from .models import RotationSkip
+from .models import RotationOrderTemp
 from .models import (
     Task, TaskType,
     TaskAssignment, AssignmentStatus,
@@ -59,45 +60,21 @@ def next_user_in_rotation(task: Task, last_done_user_id: Optional[int]) -> Optio
     return order[(idx + 1) % len(order)]
 
 def compute_next_assignee_user_id(db: Session, task: Task) -> Optional[int]:
-    """
-    Wer ist 'gerade dran'?
-    1) Wenn es ein offenes Assignment MIT user_id gibt -> dieser User.
-    2) Falls ROTATING -> aus letzter DONE + rotation_user_ids den nächsten bestimmen.
-    3) Sonst None.
-    """
-    # 1) offenes Assignment mit user_id?
-    row = (
-        db.query(TaskAssignment.user_id)
-        .filter(
-            TaskAssignment.task_id == task.id,
-            TaskAssignment.status == AssignmentStatus.PENDING,
-            TaskAssignment.user_id.isnot(None),
-        )
-        .first()
-    )
+    # 1) offenes Assignment mit user_id → der ist dran
+    row = (db.query(TaskAssignment.user_id)
+             .filter(TaskAssignment.task_id == task.id,
+                     TaskAssignment.status == AssignmentStatus.PENDING,
+                     TaskAssignment.user_id.isnot(None))
+             .first())
     if row and row[0]:
         return int(row[0])
 
-    # 2) ROTATING -> anhand letzter DONE den nächsten aus rotation_user_ids
+    # 2) ROTATING: Vorschau (Skips berücksichtigen, aber NICHT abbuchen)
     if task.task_type == TaskType.ROTATING and task.rotation_user_ids:
-        last_done = (
-            db.query(TaskAssignment.user_id)
-            .filter(
-                TaskAssignment.task_id == task.id,
-                TaskAssignment.status == AssignmentStatus.DONE,
-                TaskAssignment.user_id.isnot(None),
-            )
-            .order_by(TaskAssignment.done_at.desc())
-            .first()
-        )
-        order = list(task.rotation_user_ids)
-        if not last_done or not last_done[0] or last_done[0] not in order:
-            return order[0]
-        idx = order.index(int(last_done[0]))
-        return order[(idx + 1) % len(order)]
+        return peek_next_rotating_user(db, task, consume_skips=False)
 
-    # 3) kein Kandidat
     return None
+
 
 # --- Fälligkeit / Resttage ---------------------------------------------------
 
@@ -205,3 +182,88 @@ def reverse(db: Session, log_id: int) -> bool:
         return False
 
     return False
+
+
+def get_skip_count(db: Session, task_id: int, user_id: int) -> int:
+    rs = db.query(RotationSkip).filter(RotationSkip.task_id==task_id, RotationSkip.user_id==user_id).first()
+    return int(rs.count) if rs else 0
+
+def inc_skip(db: Session, task_id: int, user_id: int, delta: int = 1) -> None:
+    rs = db.query(RotationSkip).filter(RotationSkip.task_id==task_id, RotationSkip.user_id==user_id).first()
+    if not rs:
+        rs = RotationSkip(task_id=task_id, user_id=user_id, count=0)
+        db.add(rs)
+    rs.count = max(0, int(rs.count) + int(delta))
+    db.commit()
+
+def consume_skip_if_any(db: Session, task_id: int, user_id: int) -> bool:
+    rs = db.query(RotationSkip).filter(RotationSkip.task_id==task_id, RotationSkip.user_id==user_id).first()
+    if rs and rs.count > 0:
+        rs.count -= 1
+        db.commit()
+        return True
+    return False
+
+def last_done_user_id(db: Session, task_id: int) -> Optional[int]:
+    row = (db.query(TaskAssignment.user_id)
+             .filter(TaskAssignment.task_id==task_id,
+                     TaskAssignment.status==AssignmentStatus.DONE,
+                     TaskAssignment.user_id.isnot(None))
+             .order_by(TaskAssignment.done_at.desc())
+             .first())
+    return int(row[0]) if row and row[0] is not None else None
+
+def peek_next_rotating_user(db: Session, task: Task, consume_skips: bool) -> Optional[int]:
+    """Ermittelt den nächsten User in der Rotation, berücksichtigt Skip-Tokens.
+       Wenn consume_skips=True, werden Skips der übersprungenen User abgebucht."""
+    if task.task_type != TaskType.ROTATING or not task.rotation_user_ids:
+        return None
+    order = list(task.rotation_user_ids)
+    if not order: return None
+
+    last_uid = last_done_user_id(db, task.id)
+    start_idx = 0 if last_uid is None or last_uid not in order else (order.index(last_uid)+1) % len(order)
+
+    # Einmal um den Kreis laufen
+    for k in range(len(order)):
+        uid = int(order[(start_idx + k) % len(order)])
+        if get_skip_count(db, task.id, uid) > 0:
+            if consume_skips:
+                consume_skip_if_any(db, task.id, uid)  # abbuchen und weiter
+            continue
+        return uid
+
+    # Falls alle Skips > 0 hatten: nimm Start-User (ohne Skips zu verbrennen)
+    return int(order[start_idx])
+
+
+
+
+def set_one_cycle_swap(db: Session, task: Task, original_order: list[int]) -> None:
+    """Merkt sich die Originalreihenfolge und setzt remaining = len(order)."""
+    rot_len = len(original_order)
+    if rot_len <= 1:
+        return
+    row = db.query(RotationOrderTemp).filter(RotationOrderTemp.task_id == task.id).first()
+    if not row:
+        row = RotationOrderTemp(task_id=task.id, original_order=list(original_order), remaining=rot_len)
+        db.add(row)
+    else:
+        # Wenn schon aktiv: Original so lassen, aber „remaining“ neu starten
+        row.remaining = rot_len
+    db.commit()
+
+def tick_one_cycle_swap(db: Session, task: Task) -> None:
+    """
+    Zählt nach JEDEM Abschluss (ROTATING) einen „Turn“ runter.
+    Wenn remaining == 0 → Rotation auf original_order zurücksetzen und Temp-Eintrag löschen.
+    """
+    row = db.query(RotationOrderTemp).filter(RotationOrderTemp.task_id == task.id).first()
+    if not row:
+        return
+    row.remaining = max(0, int(row.remaining) - 1)
+    if row.remaining == 0:
+        # Reihenfolge zurück
+        task.rotation_user_ids = list(row.original_order or [])
+        db.delete(row)
+    db.commit()

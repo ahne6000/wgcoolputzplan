@@ -100,12 +100,13 @@ def mark_task_done(
 
     # Nächsten Zustand planen:
     if task.task_type == TaskType.ROTATING:
-        # nächster User + neue Pending-Zuweisung
-        last_user = a.user_id
-        nxt = next_user_in_rotation(task, last_done_user_id=last_user)
-        # neue Fälligkeit:
+        from ..services import peek_next_rotating_user, tick_one_cycle_swap
         plan_next_due_for_task(task)
+        nxt = peek_next_rotating_user(db, task, consume_skips=True)
         create_pending_assignment(db, task, user_id=nxt, due_at=task.next_due_at)
+        # NEU: One-cycle Swap herunterzählen / ggf. revertieren
+        tick_one_cycle_swap(db, task)
+
     elif task.task_type == TaskType.RECURRING_UNASSIGNED:
         # neue unassigned Pending-Zuweisung
         plan_next_due_for_task(task)
@@ -113,7 +114,7 @@ def mark_task_done(
     else:
         # ONE_OFF: nichts mehr planen
         task.next_due_at = None
-
+    
     db.commit()
 
     log(db, "MARK_DONE", actor_user_id=a.user_id,

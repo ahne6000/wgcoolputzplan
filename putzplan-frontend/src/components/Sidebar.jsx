@@ -10,7 +10,9 @@ export default function Sidebar({ current, apiBase, open=false, setOpen }){
 
   const top = [
     { key: 'tasks', label: 'Übersicht', icon: '🏠' },
+    { key: 'boerse',     label: 'Handel', icon: '🪙'},
     { key: 'settings', label: 'Settings', icon: '⚙️' },
+
   ]
 
   const go = (key, params) => {

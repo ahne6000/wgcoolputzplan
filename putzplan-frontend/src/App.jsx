@@ -8,8 +8,9 @@ import Logs from './pages/Logs'
 import Settings from './pages/Settings'
 import UserDetail from './pages/UserDetail'
 import TaskDetail from './pages/TaskDetail'
-import { parseRoute } from './utils/router'
+import { parseRoute, ensureInitialHash } from './utils/router'
 import { getDefaultApiBase } from './utils/api'
+import Boerse from './pages/Boerse.jsx'
 
 export default function App(){
   const [route, setRoute] = useState(parseRoute())
@@ -17,11 +18,15 @@ export default function App(){
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(()=>{
+    ensureInitialHash()                    // 👈 sorgt für #/tasks beim ersten Load
     const onHash = () => setRoute(parseRoute())
     window.addEventListener('hashchange', onHash)
+    // einmal direkt auslesen (falls ensureInitialHash gerade gesetzt hat)
+    setRoute(parseRoute())
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
-  useEffect(()=>{ setSidebarOpen(false) }, [route]) // Drawer nach Navigation schließen
+
+  useEffect(()=>{ setSidebarOpen(false) }, [route])
 
   let page = null
   const name = route.name
@@ -31,19 +36,15 @@ export default function App(){
   else if(name==='settings') page = <Settings apiBase={apiBase} setApiBase={setApiBase} />
   else if(name==='task') page = <TaskDetail apiBase={apiBase} taskId={route.params.id} />
   else if(name==='user') page = <UserDetail apiBase={apiBase} userId={route.params.id} />
+  else if(name==='boerse') page = <Boerse apiBase={apiBase} />
   else page = <TasksOverview apiBase={apiBase} />
 
   const currentKey = name==='user' ? `user:${route.params.id}` : (name==='task' ? 'tasks' : name)
 
   return (
     <div className="min-h-screen">
-      {/* Mobile Header */}
       <Header onMenu={()=>setSidebarOpen(true)} />
-
-      {/* Sidebar (statisch auf Desktop, Drawer auf Mobile) */}
       <Sidebar current={currentKey} apiBase={apiBase} open={sidebarOpen} setOpen={setSidebarOpen} />
-
-      {/* Inhalt */}
       {page}
     </div>
   )

@@ -3,6 +3,8 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.sqlite import JSON as SAJSON
 from enum import Enum
 from datetime import datetime
+from sqlalchemy import UniqueConstraint
+from sqlalchemy.dialects.sqlite import JSON as SAJSON
 
 from .database import Base
 
@@ -61,3 +63,22 @@ class LogEntry(Base):
     details = Column(SAJSON, nullable=True)   # freies JSON
     undo_data = Column(SAJSON, nullable=True) # was zum Rückgängig-machen nötig ist
     reversed_at = Column(DateTime, nullable=True)
+
+class RotationSkip(Base):
+    __tablename__ = "rotation_skips"
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey("tasks.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    count = Column(Integer, nullable=False, default=0)
+
+
+
+class RotationOrderTemp(Base):
+    __tablename__ = "rotation_order_temp"
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey("tasks.id"), nullable=False, index=True, unique=True)
+    original_order = Column(SAJSON, nullable=False)  # z.B. [1,2,3,4]
+    remaining = Column(Integer, nullable=False, default=0)  # noch so viele „Turns“, bis revert
+
+    __table_args__ = (UniqueConstraint('task_id', name='uq_rotation_order_temp_task'), )
+
