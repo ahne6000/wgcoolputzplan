@@ -3,7 +3,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.sqlite import JSON as SAJSON
 from enum import Enum
 from datetime import datetime
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import UniqueConstraint, Boolean, DateTime
 from sqlalchemy.dialects.sqlite import JSON as SAJSON
 
 from .database import Base
@@ -36,7 +36,8 @@ class Task(Base):
     urgency_score = Column(Integer, nullable=False, default=0)
     rotation_user_ids = Column(SAJSON, nullable=True)  # nur bei ROTATING
     next_due_at = Column(DateTime, nullable=True)
-
+    archived = Column(Boolean, nullable=False, default=False)
+    archived_at = Column(DateTime, nullable=True)
     assignments = relationship("TaskAssignment", back_populates="task")
 
 class TaskAssignment(Base):

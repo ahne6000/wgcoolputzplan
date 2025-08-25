@@ -112,8 +112,13 @@ def mark_task_done(
         plan_next_due_for_task(task)
         create_pending_assignment(db, task, user_id=None, due_at=task.next_due_at)
     else:
-        # ONE_OFF: nichts mehr planen
-        task.next_due_at = None
+        # nach Abschluss automatisch archivieren
+        task.archived = True
+        task.archived_at = utcnow_naive()
+        # sicherstellen, dass keine pendings mehr existieren
+        db.query(TaskAssignment).filter(
+            TaskAssignment.task_id == task.id, TaskAssignment.status == AssignmentStatus.PENDING
+        ).delete(synchronize_session=False)
     
     db.commit()
 

@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi import APIRouter, Depends, HTTPException, Form, Query
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime, timedelta, timezone
 from ..database import get_db
-from ..models import Task, TaskType
+from ..models import Task, TaskType, TaskAssignment, AssignmentStatus
 from ..schemas import TaskCreate, TaskEdit, TaskOut
 from ..services import (
     compute_next_assignee_user_id,
@@ -17,14 +17,19 @@ from ..services import (
 router = APIRouter()
 
 @router.get("/ListAllTasks", response_model=List[TaskOut])
-def list_all_tasks(db: Session = Depends(get_db)):
+def list_all_tasks(include_archived: bool = Query(False), db: Session = Depends(get_db)):
+    q = db.query(Task)
+    if not include_archived:
+        q = q.filter(Task.archived == False)
+    tasks = q.order_by(Task.id.asc()).all()
     out = []
-    for t in db.query(Task).order_by(Task.id.asc()).all():
-        d = TaskOut.from_orm(t).dict()
+    for t in tasks:
+        d = TaskOut.model_validate(t).model_dump()
         d["next_assignee_user_id"] = compute_next_assignee_user_id(db, t)
         d["rest_days"] = compute_rest_days(t)
         out.append(TaskOut(**d))
     return out
+
 
 @router.get("/Task/{task_id}", response_model=TaskOut)
 def get_task(task_id: int, db: Session = Depends(get_db)):
@@ -80,7 +85,6 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db)):
     d["rest_days"] = compute_rest_days(task)
     return TaskOut(**d)
 
-
 @router.patch("/EditTask")
 def edit_task(data: TaskEdit, db: Session = Depends(get_db)):
     t = db.query(Task).get(data.id)
@@ -112,3 +116,36 @@ def vote_down(task_id: int = Form(...), user_id: int = Form(...), db: Session = 
     db.commit()
     log(db, "URG_DOWN", actor_user_id=int(user_id), details={"task_id": t.id, "delta": -1}, undo_data={"task_id": t.id, "delta_was": -1})
     return {"ok": True, "urgency": t.urgency_score}
+
+@router.post("/ArchiveTask")
+def archive_task(task_id: int = Form(...), db: Session = Depends(get_db)):
+    t = db.query(Task).get(int(task_id))
+    if not t: raise HTTPException(404, "Task not found")
+    if t.archived: return {"ok": True}
+    t.archived = True
+    t.archived_at = utcnow_naive()
+    # offene Assignments aufräumen (löschen)
+    db.query(TaskAssignment).filter(
+        TaskAssignment.task_id == t.id, TaskAssignment.status == AssignmentStatus.PENDING
+    ).delete(synchronize_session=False)
+    db.commit()
+    return {"ok": True}
+
+@router.post("/UnarchiveTask")
+def unarchive_task(task_id: int = Form(...), db: Session = Depends(get_db)):
+    t = db.query(Task).get(int(task_id))
+    if not t: raise HTTPException(404, "Task not found")
+    t.archived = False
+    t.archived_at = None
+    db.commit()
+    return {"ok": True}
+
+@router.post("/DeleteTask")
+def delete_task(task_id: int = Form(...), db: Session = Depends(get_db)):
+    t = db.query(Task).get(int(task_id))
+    if not t: return {"ok": True}
+    # Assignments entfernen
+    db.query(TaskAssignment).filter(TaskAssignment.task_id == t.id).delete(synchronize_session=False)
+    db.delete(t)
+    db.commit()
+    return {"ok": True}

@@ -86,3 +86,24 @@ class LogOut(ConfigORM):
     action: str
     actor_user_id: Optional[int]
     details: Optional[Any]
+
+class TaskOut(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    task_type: TaskType
+    interval_days: Optional[int] = None
+    points: int
+    rotation_user_ids: Optional[List[int]] = None
+    next_due_at: Optional[datetime] = None
+    urgency_score: int = 0
+
+    # NEU:
+    archived: bool = False
+    archived_at: Optional[datetime] = None
+
+    # abgeleitete Felder:
+    next_assignee_user_id: Optional[int] = None
+    rest_days: Optional[int] = None
+
+    model_config = ConfigDict(from_attributes=True)

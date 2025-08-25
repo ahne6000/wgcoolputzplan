@@ -10,6 +10,8 @@ export default function TaskDetail({ apiBase, taskId }){
   const [users, setUsers] = useState([])
   const [assignments, setAssignments] = useState([])
   const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(false)
+
 
   const [voteUserId, setVoteUserId] = useState(null)
   const [assignNextDueDays, setAssignNextDueDays] = useState(7)
@@ -112,6 +114,43 @@ export default function TaskDetail({ apiBase, taskId }){
 
   const isPutzenActive = putzenActiveLocal || Number(task.urgency_score) > 0
 
+
+const doArchive = async () => {
+  if (!task) return
+  setBusy(true)
+  const fd = new FormData()
+  fd.append('task_id', String(task.id))
+  await fetch(apiBase + '/ArchiveTask', { method: 'POST', body: fd })
+  setBusy(false)
+  await load()              // deine bestehende Reload-Funktion
+}
+
+const doUnarchive = async () => {
+  if (!task) return
+  setBusy(true)
+  const fd = new FormData()
+  fd.append('task_id', String(task.id))
+  await fetch(apiBase + '/UnarchiveTask', { method: 'POST', body: fd })
+  setBusy(false)
+  await load()
+}
+
+const doDelete = async () => {
+  if (!task) return
+  if (!confirm('Diesen Task unwiderruflich löschen?')) return
+  setBusy(true)
+  const fd = new FormData()
+  fd.append('task_id', String(task.id))
+  await fetch(apiBase + '/DeleteTask', { method: 'POST', body: fd })
+  setBusy(false)
+  // nach dem Löschen zurück zur Übersicht
+  window.location.hash = '#/tasks'
+}
+
+
+
+
+
   return (
     <PageShell
       title={`Task #${task.id} – ${task.title}`}
@@ -121,7 +160,23 @@ export default function TaskDetail({ apiBase, taskId }){
             {users.map(u=> <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
           <button onClick={putzen} className="px-2 py-1 rounded bg-red-600 text-white text-sm font-semibold">Putzen!</button>
+
+        {!task?.archived ? (
+          <button onClick={doArchive} className="px-3 py-2 rounded-lg bg-amber-600 text-white" disabled={busy}>
+            Archivieren
+          </button>
+        ) : (
+          <button onClick={doUnarchive} className="px-3 py-2 rounded-lg bg-slate-600 text-white" disabled={busy}>
+            Wieder aktivieren
+          </button>
+        )}
+
+        <button onClick={doDelete} className="px-3 py-2 rounded-lg bg-red-700 text-white" disabled={busy}>
+          Löschen
+        </button>
+
         </div>
+
       }
     >
       {error && <div className="mb-3 text-red-600">{String(error)}</div>}

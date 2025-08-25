@@ -267,3 +267,10 @@ def tick_one_cycle_swap(db: Session, task: Task) -> None:
         task.rotation_user_ids = list(row.original_order or [])
         db.delete(row)
     db.commit()
+
+def create_pending_assignment(db: Session, task: Task, user_id: Optional[int], due_at: Optional[datetime]) -> Optional[TaskAssignment]:
+    if getattr(task, "archived", False):
+        return None
+    a = TaskAssignment(task_id=task.id, user_id=user_id, status=AssignmentStatus.PENDING, due_at=due_at)
+    db.add(a); db.commit(); db.refresh(a)
+    return a
