@@ -108,7 +108,7 @@ export default function TaskDetail({ apiBase, taskId }){
 
   if(!task) return <PageShell title="Task"><div className="text-gray-600">Task nicht gefunden.</div></PageShell>
 
-  const restTage = (task.task_type !== 'ONE_OFF' && task.next_due_at != null)
+  const restTage = (task.next_due_at != null)
     ? Math.max(0, Math.ceil(daysLeft(task.next_due_at)))
     : null
 
@@ -146,9 +146,6 @@ const doDelete = async () => {
   // nach dem Löschen zurück zur Übersicht
   window.location.hash = '#/tasks'
 }
-
-
-
 
 
   return (
@@ -222,7 +219,7 @@ const doDelete = async () => {
               <div className="font-medium">{task.urgency_score}</div>
             </div>
 
-            {task.task_type !== 'ONE_OFF' && (
+            {task.next_due_at && (
               <div className="col-span-2">
                 <div className="text-sm text-gray-500">Nächste Fälligkeit</div>
                 <div className="flex items-center gap-2">
@@ -268,7 +265,7 @@ const doDelete = async () => {
                     <tr key={a.id} className="odd:bg-white even:bg-gray-50">
                       <td className="p-2 border">{a.id}</td>
                       <td className="p-2 border">{a.user_id ? nameById(a.user_id) : '—'}</td>
-                      <td className="p-2 border">{a.due_at && task.task_type!=='ONE_OFF' ? `${Math.max(0, Math.ceil(daysLeft(a.due_at)))} Tage` : '—'}</td>
+                      <td className="p-2 border">{a.due_at ? `${Math.max(0, Math.ceil(daysLeft(a.due_at)))} Tage` : '—'}</td>
                       <td className="p-2 border">
                         <button onClick={()=>markDone(a.id)} className="px-2 py-1 rounded bg-emerald-600 text-white">Als erledigt markieren</button>
                       </td>

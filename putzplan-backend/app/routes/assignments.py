@@ -10,11 +10,9 @@ from ..services import (
     utcnow_naive,
     plan_next_due_for_task,
     log,
-    get_single_pending,
-    has_any_assignee,
-    ensure_no_other_pending_or_raise,  # falls genutzt
     create_pending_assignment,         # falls genutzt
-    next_user_in_rotation,             # falls genutzt
+    is_one_off,
+    archive_task as archive_task_core
 )
 
 router = APIRouter()
@@ -93,9 +91,10 @@ def mark_task_done(
 
     # Credits
     if user:
-        user.credits += int(task.points or 0)
+        user.credits = int(user.credits or 0) + int(task.points or 0)
 
-    # NEU: Escalation zurücksetzen – erst durch „Erledigt“ wird gecleart
+    db.flush()
+
     task.urgency_score = 0
 
     # Nächsten Zustand planen:
@@ -112,13 +111,7 @@ def mark_task_done(
         plan_next_due_for_task(task)
         create_pending_assignment(db, task, user_id=None, due_at=task.next_due_at)
     else:
-        # nach Abschluss automatisch archivieren
-        task.archived = True
-        task.archived_at = utcnow_naive()
-        # sicherstellen, dass keine pendings mehr existieren
-        db.query(TaskAssignment).filter(
-            TaskAssignment.task_id == task.id, TaskAssignment.status == AssignmentStatus.PENDING
-        ).delete(synchronize_session=False)
+        archive_task_core(db, task)
     
     db.commit()
 

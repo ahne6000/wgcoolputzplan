@@ -79,11 +79,12 @@ def compute_next_assignee_user_id(db: Session, task: Task) -> Optional[int]:
 # --- Fälligkeit / Resttage ---------------------------------------------------
 
 def compute_rest_days(task: Task) -> Optional[int]:
-    if task.task_type == TaskType.ONE_OFF or not task.next_due_at:
+    if not task.next_due_at:
         return None
     delta = task.next_due_at - utcnow_naive()
     d = math.ceil(delta.total_seconds() / 86400)
     return max(0, d)
+
 
 def plan_next_due_for_task(task: Task):
     """Für nicht-ONE_OFF Aufgaben neue Fälligkeit anhand interval_days setzen."""
@@ -274,3 +275,25 @@ def create_pending_assignment(db: Session, task: Task, user_id: Optional[int], d
     a = TaskAssignment(task_id=task.id, user_id=user_id, status=AssignmentStatus.PENDING, due_at=due_at)
     db.add(a); db.commit(); db.refresh(a)
     return a
+
+def is_one_off(task: Task) -> bool:
+    """Erkennt ONE_OFF robust, auch wenn alte Daten 'ONE_TIME' o.ä. enthalten."""
+    tt = getattr(task, "task_type", None)
+    if tt is None:
+        return False
+    # Enum-Name oder String harmonisieren
+    name = getattr(tt, "name", None) or str(tt)
+    name = name.upper()
+    return name in {"ONE_OFF", "ONE_TIME", "ONEOFF", "ONE-TIME"}
+
+
+def archive_task(db: Session, task: Task, exclude_assignment_id: Optional[int] = None) -> None:
+    task.archived = True
+    task.archived_at = utcnow_naive()
+    q = db.query(TaskAssignment).filter(
+        TaskAssignment.task_id == task.id,
+        TaskAssignment.status == AssignmentStatus.PENDING
+    )
+    if exclude_assignment_id is not None:
+        q = q.filter(TaskAssignment.id != exclude_assignment_id)
+    q.delete(synchronize_session=False)

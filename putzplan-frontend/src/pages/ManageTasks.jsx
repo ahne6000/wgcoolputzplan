@@ -9,11 +9,12 @@ export default function ManageTasks({ apiBase }){
   const [error, setError] = useState(null)
   const [openId, setOpenId] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [showArchived, setShowArchived] = useState(true)
 
   const load = async () => {
     try{
       const [t,u,a] = await Promise.all([
-        api.get('/ListAllTasks'),
+        api.get('/ListAllTasks?include_archived=1'),
         api.get('/ListAllUser'),
         api.get('/ListAssignments')
       ])
@@ -24,7 +25,30 @@ export default function ManageTasks({ apiBase }){
 
   const nameById = (id) => users.find(u=>u.id===id)?.name || (id ? `#${id}` : '—')
 
-  // Rotation Helpers
+  // -------- Sortierung zuerst definieren!
+  const sorter = (a,b) => {
+    const rA = a.rest_days == null ? 9999 : a.rest_days
+    const rB = b.rest_days == null ? 9999 : b.rest_days
+    const oA = rA <= 0 ? 1 : 0
+    const oB = rB <= 0 ? 1 : 0
+    if (oA !== oB) return oB - oA               // überfällige zuerst
+    if (rA !== rB) return rA - rB               // dann nach Resttagen
+    const uA = Number(a.urgency_score || 0)
+    const uB = Number(b.urgency_score || 0)
+    return uB - uA                               // dann nach Urgency
+  }
+
+  // -------- Active / Archived Listen
+  const active   = useMemo(()=> (tasks||[]).filter(t=>!t.archived).sort(sorter), [tasks])
+  const archived = useMemo(()=> (tasks||[]).filter(t=> t.archived).sort(sorter), [tasks])
+
+  // -------- Rotation Helpers (mit robustem Fallback)
+  const currentRotation = (t) => {
+    return Array.isArray(t.rotation_order_user_ids) && t.rotation_order_user_ids.length
+      ? t.rotation_order_user_ids
+      : (Array.isArray(t.rotation_user_ids) ? t.rotation_user_ids : [])
+  }
+
   const moveInArray = (arr, from, to) => {
     const a = [...arr]
     const item = a.splice(from,1)[0]
@@ -35,7 +59,7 @@ export default function ManageTasks({ apiBase }){
   const onRotationMove = (taskId, idx, dir) => {
     setTasks(ts => ts.map(t => {
       if (t.id!==taskId) return t
-      const arr = Array.isArray(t.rotation_order_user_ids) ? t.rotation_order_user_ids : []
+      const arr = currentRotation(t)
       const to = Math.min(arr.length-1, Math.max(0, idx+dir))
       return { ...t, rotation_order_user_ids: moveInArray(arr, idx, to) }
     }))
@@ -44,7 +68,7 @@ export default function ManageTasks({ apiBase }){
   const onRotationRemove = (taskId, userId) => {
     setTasks(ts => ts.map(t => {
       if (t.id!==taskId) return t
-      const arr = (t.rotation_order_user_ids||[]).filter(id => id!==userId)
+      const arr = currentRotation(t).filter(id => id!==userId)
       return { ...t, rotation_order_user_ids: arr }
     }))
   }
@@ -52,7 +76,7 @@ export default function ManageTasks({ apiBase }){
   const onRotationAdd = (taskId, userId) => {
     setTasks(ts => ts.map(t => {
       if (t.id!==taskId) return t
-      const arr = [...(t.rotation_order_user_ids||[]), userId]
+      const arr = [...currentRotation(t), userId]
       return { ...t, rotation_order_user_ids: arr }
     }))
   }
@@ -62,7 +86,9 @@ export default function ManageTasks({ apiBase }){
     try{
       await api.patch('/EditTask', {
         id: task.id,
-        rotation_user_ids: task.rotation_order_user_ids
+        rotation_user_ids: (task.rotation_order_user_ids && task.rotation_order_user_ids.length
+          ? task.rotation_order_user_ids
+          : (task.rotation_user_ids || []))
       })
       await load()
     } finally { setSaving(false) }
@@ -76,7 +102,16 @@ export default function ManageTasks({ apiBase }){
     } finally { setSaving(false) }
   }
 
-  // Assignments (pending) -> User umhängen
+  // -------- Archiv / Delete Helpers
+  const callTaskAction = async (path, task_id) => {
+    const fd = new FormData()
+    fd.append('task_id', String(task_id))
+    const res = await fetch(apiBase + path, { method:'POST', body: fd })
+    if(!res.ok) alert(await res.text())
+    await load()
+  }
+
+  // -------- Assignments (pending) -> User umhängen
   const pendingByTask = useMemo(() => {
     const map = {}
     for (const a of assignments){
@@ -91,102 +126,158 @@ export default function ManageTasks({ apiBase }){
     const fd = new FormData()
     fd.append('assignment_id', String(assignmentId))
     fd.append('new_user_id', String(newUserId))
-    // ohne until_timestamp = dauerhaft
     await fetch(apiBase + '/SwitchUserTaskAssignmentTemporarily', { method:'POST', body: fd })
     await load()
+  }
+
+  // -------- Renderkarte (wiederverwendet für aktiv/archiv)
+  const TaskCard = ({ t }) => {
+    const isOpen = openId === t.id
+    const pend = pendingByTask[t.id] || []
+    const rotationArray = currentRotation(t)
+
+    return (
+      <div className={`rounded-xl border ${t.archived ? 'bg-gray-50 opacity-80' : 'bg-white'}`}>
+        <button
+          onClick={()=>setOpenId(isOpen?null:t.id)}
+          className="w-full text-left px-4 py-3 flex items-center justify-between"
+        >
+          <div className="flex items-center gap-2">
+            {t.archived && <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800">Archiviert</span>}
+            <div className="font-medium truncate">{t.title} <span className="text-xs text-gray-500">#{t.id}</span></div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="text-sm text-gray-500">{t.task_type}</div>
+            {!t.archived ? (
+              <>
+                <button onClick={(e)=>{e.stopPropagation(); callTaskAction('/ArchiveTask', t.id)}} className="px-2 py-1 rounded bg-amber-600 text-white text-xs">Archivieren</button>
+                <button onClick={(e)=>{e.stopPropagation(); callTaskAction('/DeleteTask', t.id)}} className="px-2 py-1 rounded bg-red-700 text-white text-xs">Löschen</button>
+              </>
+            ) : (
+              <>
+                <button onClick={(e)=>{e.stopPropagation(); callTaskAction('/UnarchiveTask', t.id)}} className="px-2 py-1 rounded bg-slate-600 text-white text-xs">Wieder aktivieren</button>
+                <button onClick={(e)=>{e.stopPropagation(); callTaskAction('/DeleteTask', t.id)}} className="px-2 py-1 rounded bg-red-700 text-white text-xs">Löschen</button>
+              </>
+            )}
+          </div>
+        </button>
+
+        {isOpen && (
+          <div className="px-4 pb-4 space-y-4">
+            {t.task_type==='ROTATING' && (
+              <div className="space-y-2">
+                <div className="text-sm text-gray-600">Rotation bearbeiten</div>
+                <div className="flex flex-wrap gap-2">
+                  {rotationArray.map((uid, idx) => (
+                    <div key={`${uid}-${idx}`} className="flex items-center gap-1 border rounded-full px-2 py-1 bg-gray-50">
+                      <span className="text-sm">{nameById(uid)}</span>
+                      <button className="px-1" onClick={()=>onRotationMove(t.id, idx, -1)} aria-label="Hoch">↑</button>
+                      <button className="px-1" onClick={()=>onRotationMove(t.id, idx, +1)} aria-label="Runter">↓</button>
+                      <button className="px-1 text-rose-600" onClick={()=>onRotationRemove(t.id, uid)} aria-label="Entfernen">✕</button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <select onChange={(e)=>{ const val=Number(e.target.value)||null; if(val) onRotationAdd(t.id, val); e.target.value='' }} className="border rounded-lg px-2 py-1">
+                    <option value="">User hinzufügen…</option>
+                    {users.filter(u => !rotationArray.includes(u.id)).map(u => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
+                  </select>
+                  <button onClick={()=>saveRotation(t)} className="px-3 py-2 rounded-lg bg-indigo-600 text-white" disabled={saving}>
+                    {saving ? 'Speichere…' : 'Reihenfolge speichern'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {t.task_type==='RECURRING_UNASSIGNED' && (
+              <div className="space-y-2">
+                <div className="text-sm text-gray-600">Intervall (Tage) anpassen</div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    defaultValue={t.interval_days ?? ''}
+                    onBlur={(e)=>saveInterval(t, e.target.value)}
+                    className="border rounded-lg px-3 py-2 w-32"
+                    disabled={t.archived}
+                  />
+                  <div className="text-xs text-gray-500">Änderung wird beim Verlassen des Felds gespeichert.</div>
+                </div>
+              </div>
+            )}
+
+            {t.task_type==='ONE_OFF' && (
+              <div className="space-y-2">
+                <div className="text-sm text-gray-600">Intervall (Tage) für One-Off</div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    defaultValue={t.interval_days ?? ''}
+                    onBlur={(e)=>saveInterval(t, e.target.value)}
+                    className="border rounded-lg px-3 py-2 w-32"
+                    disabled={t.archived}
+                  />
+                  <div className="text-xs text-gray-500">Wirkt für die initiale Fälligkeit.</div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <div className="text-sm text-gray-600">Offene Zuweisungen</div>
+              { (pendingByTask[t.id]||[]).length === 0 ? (
+                <div className="text-sm text-gray-500">Keine offenen Assignments.</div>
+              ) : (
+                <div className="space-y-2">
+                  { (pendingByTask[t.id]||[]).map(a => (
+                    <div key={a.id} className="flex items-center gap-2">
+                      <div className="text-sm">#{a.id}</div>
+                      <div className="text-sm">aktuell: <span className="font-medium">{nameById(a.user_id)}</span></div>
+                      <select
+                        defaultValue={a.user_id || ''}
+                        onChange={(e)=>reassign(a.id, Number(e.target.value))}
+                        className="border rounded-lg px-2 py-1"
+                        disabled={t.archived}
+                      >
+                        {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
     <div className="space-y-4">
       {error && <div className="text-red-600">{String(error)}</div>}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-4">
         <button onClick={load} className="px-3 py-2 rounded-lg bg-gray-900 text-white">Neu laden</button>
         {saving && <span className="text-sm text-gray-600">Speichere…</span>}
+        <label className="text-sm flex items-center gap-2 ml-auto">
+          <input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)} />
+          Archivierte anzeigen
+        </label>
       </div>
 
+      {/* Aktive */}
       <div className="space-y-3">
-        {tasks.map(t => {
-          const isOpen = openId === t.id
-          const pend = pendingByTask[t.id] || []
-          return (
-            <div key={t.id} className="rounded-xl border bg-white">
-              <button
-                onClick={()=>setOpenId(isOpen?null:t.id)}
-                className="w-full text-left px-4 py-3 flex items-center justify-between"
-              >
-                <div className="font-medium truncate">{t.title} <span className="text-xs text-gray-500">#{t.id}</span></div>
-                <div className="text-sm text-gray-500">{t.task_type}</div>
-              </button>
-              {isOpen && (
-                <div className="px-4 pb-4 space-y-4">
-                  {t.task_type==='ROTATING' && (
-                    <div className="space-y-2">
-                      <div className="text-sm text-gray-600">Rotation bearbeiten</div>
-                      <div className="flex flex-wrap gap-2">
-                        {(t.rotation_order_user_ids||[]).map((uid, idx) => (
-                          <div key={uid} className="flex items-center gap-1 border rounded-full px-2 py-1 bg-gray-50">
-                            <span className="text-sm">{nameById(uid)}</span>
-                            <button className="px-1" onClick={()=>onRotationMove(t.id, idx, -1)} aria-label="Hoch">↑</button>
-                            <button className="px-1" onClick={()=>onRotationMove(t.id, idx, +1)} aria-label="Runter">↓</button>
-                            <button className="px-1 text-rose-600" onClick={()=>onRotationRemove(t.id, uid)} aria-label="Entfernen">✕</button>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <select onChange={(e)=>{ const val=Number(e.target.value)||null; if(val) onRotationAdd(t.id, val); e.target.value='' }} className="border rounded-lg px-2 py-1">
-                          <option value="">User hinzufügen…</option>
-                          {users.filter(u => !(t.rotation_order_user_ids||[]).includes(u.id)).map(u => (
-                            <option key={u.id} value={u.id}>{u.name}</option>
-                          ))}
-                        </select>
-                        <button onClick={()=>saveRotation(t)} className="px-3 py-2 rounded-lg bg-indigo-600 text-white">Reihenfolge speichern</button>
-                      </div>
-                    </div>
-                  )}
-
-                  {t.task_type==='RECURRING_UNASSIGNED' && (
-                    <div className="space-y-2">
-                      <div className="text-sm text-gray-600">Intervall (Tage) anpassen</div>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          defaultValue={t.interval_days ?? ''}
-                          onBlur={(e)=>saveInterval(t, e.target.value)}
-                          className="border rounded-lg px-3 py-2 w-32"
-                        />
-                        <div className="text-xs text-gray-500">Änderung wird beim Verlassen des Felds gespeichert.</div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <div className="text-sm text-gray-600">Offene Zuweisungen</div>
-                    {pend.length === 0 ? (
-                      <div className="text-sm text-gray-500">Keine offenen Assignments.</div>
-                    ) : (
-                      <div className="space-y-2">
-                        {pend.map(a => (
-                          <div key={a.id} className="flex items-center gap-2">
-                            <div className="text-sm">#{a.id}</div>
-                            <div className="text-sm">aktuell: <span className="font-medium">{nameById(a.user_id)}</span></div>
-                            <select
-                              defaultValue={a.user_id || ''}
-                              onChange={(e)=>reassign(a.id, Number(e.target.value))}
-                              className="border rounded-lg px-2 py-1"
-                            >
-                              {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                            </select>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
+        {active.map(t => <TaskCard key={t.id} t={t} />)}
+        {active.length===0 && <div className="text-sm text-gray-600">Keine aktiven Tasks.</div>}
       </div>
+
+      {/* Archivierte */}
+      {showArchived && (
+        <div className="space-y-3 pt-4">
+          <div className="text-lg font-medium">Archivierte Tasks</div>
+          {archived.map(t => <TaskCard key={t.id} t={t} />)}
+          {archived.length===0 && <div className="text-sm text-gray-600">Keine archivierten Tasks.</div>}
+        </div>
+      )}
     </div>
   )
 }

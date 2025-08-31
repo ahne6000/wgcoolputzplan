@@ -108,7 +108,6 @@ export default function TasksOverview({ apiBase }){
   const nameById = (id) => users.find(u => u.id === id)?.name || (id ? `#${id}` : '—')
 
   const resttageNum = (due, type) => {
-    if (type === 'ONE_OFF') return null
     if (!due) return null
     const d = Math.ceil(daysLeft(due))
     return d <= 0 ? 0 : d
@@ -134,7 +133,7 @@ export default function TasksOverview({ apiBase }){
   // Sortierung: überfällige zuerst, dann Urgency
   const sorted = useMemo(() => {
     const keyDue = (t) => {
-      if(t.task_type==='ONE_OFF' || !t.next_due_at) return Number.POSITIVE_INFINITY
+      if (!t.next_due_at) return Number.POSITIVE_INFINITY
       const d = Math.ceil(daysLeft(t.next_due_at))
       return d <= 0 ? -1 : d
     }
@@ -166,7 +165,7 @@ export default function TasksOverview({ apiBase }){
             const pendingAssigned = pendingAssignedByTask.get(t.id)
             const pendingUnassigned = pendingUnassignedByTask.get(t.id)
             const isClaimable = !!pendingUnassigned && !assigneeId
-            const baseStyle = t.task_type==='ONE_OFF' ? {} : dueGradient(t.next_due_at)
+            const baseStyle = dueGradient(t.next_due_at)
             const dangerStyle = isPutzenActive(t)
               ? { background: 'linear-gradient(90deg, rgba(239,68,68,0.28), rgba(239,68,68,0.10))' }
               : null
