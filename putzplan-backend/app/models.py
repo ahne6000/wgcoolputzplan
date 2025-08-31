@@ -1,10 +1,11 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum as SAEnum, Text, Index
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum as SAEnum, Text, Index, UniqueConstraint, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.sqlite import JSON as SAJSON
 from enum import Enum
 from datetime import datetime
-from sqlalchemy import UniqueConstraint, Boolean, DateTime
 from sqlalchemy.dialects.sqlite import JSON as SAJSON
+
+
 
 from .database import Base
 
@@ -83,3 +84,12 @@ class RotationOrderTemp(Base):
 
     __table_args__ = (UniqueConstraint('task_id', name='uq_rotation_order_temp_task'), )
 
+
+class CookingEvent(Base):
+    __tablename__ = "cooking_events"
+    id = Column(Integer, primary_key=True)
+    cooker_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    eater_user_ids = Column(SAJSON, nullable=False, default=[])  # z.B. [1,2,3]
+    title = Column(String, nullable=True)                        # was gekocht
+    cooked_at = Column(DateTime, nullable=False)                 # wann (default: jetzt)
+    credits_awarded = Column(Integer, nullable=False, default=0) # dem Koch gutgeschrieben

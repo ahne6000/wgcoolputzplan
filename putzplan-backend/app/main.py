@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from .database import Base, engine
-from .routes import users, tasks, assignments, logs, swaps
+from .routes import users, tasks, assignments, logs, swaps, cooking
 
 # DB-Tabellen erstellen
 Base.metadata.create_all(bind=engine)
@@ -29,6 +29,8 @@ app.include_router(tasks.router)
 app.include_router(assignments.router)
 app.include_router(logs.router)
 app.include_router(swaps.router)
+app.include_router(cooking.router)
+
 
 @app.get("/")
 def root():

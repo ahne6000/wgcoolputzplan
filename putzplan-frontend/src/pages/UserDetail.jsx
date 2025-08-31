@@ -6,6 +6,8 @@ import { useApi } from '../utils/api'
 import { daysLeft, dueGradient, DueBadge } from '../utils/due.jsx'
 import { navTo } from '../utils/router'
 import Stats from '../components/Stats'
+import CookingMiniPanel from '../components/CookingMiniPanel'
+
 
 export default function UserDetail({ apiBase, userId }){
   const api = useApi(apiBase)
@@ -144,7 +146,9 @@ export default function UserDetail({ apiBase, userId }){
         </div>
       </div>
 
+
       <div className="grid md:grid-cols-2 gap-6">
+
         {/* Offene Assignments – Kacheln wie in Übersicht */}
         <div>
           <div className="text-lg font-medium mb-2">Offene Assignments</div>
@@ -256,6 +260,10 @@ export default function UserDetail({ apiBase, userId }){
           </div>
         </div>
       </div>
+      {/* Kochen – Schnellpanel */}
+<div className="mb-6">
+  <CookingMiniPanel apiBase={apiBase} cookerUserId={userId} />
+</div>
     </PageShell>
   )
 }

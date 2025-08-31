@@ -12,6 +12,7 @@ export function parseRoute() {
   if (name === 'settings')     return { name: 'settings', params: {} }
   if (name === 'boerse')       return { name: 'boerse', params: {} }
   if (name === 'tasks')        return { name: 'tasks', params: {} }
+  if (name === 'kochen') return { name: 'kochen', params: {} }
 
   // unknown → fallback
   return { name: 'tasks', params: {} }
@@ -22,6 +23,7 @@ export function navTo(name, params = {}) {
   else if (name === 'task') window.location.hash = `#/task/${params.id}`
   else if (name === 'settings') window.location.hash = '#/settings'
   else if (name === 'boerse')   window.location.hash = '#/boerse'
+  else if (name === 'kochen') window.location.hash = '#/kochen'
   else window.location.hash = '#/tasks'
 }
 

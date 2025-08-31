@@ -1,7 +1,7 @@
-from pydantic import BaseModel
 from typing import Optional, List, Any
 from datetime import datetime
 from enum import Enum
+from pydantic import BaseModel, ConfigDict
 
 # Pydantic v1
 try:
@@ -105,5 +105,17 @@ class TaskOut(BaseModel):
     # abgeleitete Felder:
     next_assignee_user_id: Optional[int] = None
     rest_days: Optional[int] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+
+class CookingEventOut(BaseModel):
+    id: int
+    cooker_user_id: int
+    eater_user_ids: List[int]
+    title: Optional[str] = None
+    cooked_at: datetime
+    credits_awarded: int
 
     model_config = ConfigDict(from_attributes=True)

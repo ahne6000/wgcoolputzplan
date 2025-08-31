@@ -11,6 +11,8 @@ import TaskDetail from './pages/TaskDetail'
 import { parseRoute, ensureInitialHash } from './utils/router'
 import { getDefaultApiBase } from './utils/api'
 import Boerse from './pages/Boerse.jsx'
+import Kochen from './pages/Kochen.jsx'
+
 
 export default function App(){
   const [route, setRoute] = useState(parseRoute())
@@ -37,6 +39,7 @@ export default function App(){
   else if(name==='task') page = <TaskDetail apiBase={apiBase} taskId={route.params.id} />
   else if(name==='user') page = <UserDetail apiBase={apiBase} userId={route.params.id} />
   else if(name==='boerse') page = <Boerse apiBase={apiBase} />
+  else if (name === 'kochen') page = <Kochen apiBase={apiBase} />
   else page = <TasksOverview apiBase={apiBase} />
 
   const currentKey = name==='user' ? `user:${route.params.id}` : (name==='task' ? 'tasks' : name)
