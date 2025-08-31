@@ -45,15 +45,15 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db)):
     # Fälligkeit initial bestimmen:
     # ONE_OFF ohne angegebenes Intervall → Standard 7 Tage
     interval = data.interval_days
-    first_due = data.first_due_at
-    if not first_due:
-        if interval and interval > 0:
-            first_due = utcnow_naive() + timedelta(days=int(interval))
-        elif data.task_type == TaskType.RECURRING_UNASSIGNED:
-            # Fallback: sofort fällig, falls kein Intervall gesetzt
-            first_due = utcnow_naive()
-        else:
-            first_due = None
+    first_due = None
+
+    if interval and interval > 0:
+        # Standard: jetzt + Intervall
+        first_due = utcnow_naive() + timedelta(days=int(interval))
+    elif data.task_type == TaskType.RECURRING_UNASSIGNED:
+        # Wenn kein Intervall gesetzt: sofort (besser wäre: Intervall required machen)
+        first_due = utcnow_naive()
+    # else: bleibt None (z. B. ROTATING ohne Intervall)
 
 
     # Task anlegen

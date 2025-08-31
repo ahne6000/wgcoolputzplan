@@ -1,8 +1,9 @@
 # app/services.py
 
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from typing import Optional, List, Dict, Any
+from collections.abc import Mapping
 
 from sqlalchemy.orm import Session
 from .models import RotationSkip
@@ -107,12 +108,15 @@ def create_pending_assignment(db: Session, task: Task, user_id: Optional[int], d
 
 # --- Logging + Reverse -------------------------------------------------------
 
-def log(db: Session, action: str, actor_user_id: Optional[int], details: Dict[str, Any], undo_data: Optional[Dict[str, Any]] = None) -> LogEntry:
+def log(db: Session, action: str, actor_user_id: int | None = None, *,
+        details: dict | None = None, undo_data: dict | None = None):
     entry = LogEntry(
+        timestamp=utcnow_naive(),
         action=action,
         actor_user_id=actor_user_id,
-        details=details or {},
-        undo_data=undo_data or {},
+        details=_to_jsonable(details) if details is not None else None,
+        undo_data=_to_jsonable(undo_data) if undo_data is not None else None,
+        reversed_at=None,
     )
     db.add(entry); db.commit(); db.refresh(entry)
     return entry
@@ -296,3 +300,20 @@ def archive_task(db: Session, task: Task, exclude_assignment_id: Optional[int] =
     if exclude_assignment_id is not None:
         q = q.filter(TaskAssignment.id != exclude_assignment_id)
     q.delete(synchronize_session=False)
+
+def _to_jsonable(o):
+    if isinstance(o, (datetime, date)):
+        # ISO 8601 ohne TZ (du nutzt ohnehin utcnow_naive)
+        return o.isoformat()
+    if isinstance(o, Mapping):
+        return {k: _to_jsonable(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple, set)):
+        return [_to_jsonable(v) for v in o]
+    try:
+        # einfache Typen (int, float, str, bool, None) gehen durch
+        import json
+        json.dumps(o)
+        return o
+    except Exception:
+        # Fallback: String-Repräsentation
+        return str(o)

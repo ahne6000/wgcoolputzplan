@@ -33,10 +33,7 @@ export default function CreateTask({ apiBase, embed=false }){
         ? (form.interval_days ? Number(form.interval_days) : null)
         : null,
       rotation_user_ids: (type==='ROTATING' ? form.rotation_user_ids.map(Number) : null),
-      // RECURRING_UNASSIGNED startet sofort
-      first_due_at: (type==='RECURRING_UNASSIGNED')
-        ? new Date().toISOString()
-        : null,
+
     }
 
     try {

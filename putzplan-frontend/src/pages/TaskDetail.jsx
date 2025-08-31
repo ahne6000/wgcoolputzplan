@@ -11,9 +11,6 @@ export default function TaskDetail({ apiBase, taskId }){
   const [assignments, setAssignments] = useState([])
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
-
-
-  const [voteUserId, setVoteUserId] = useState(null)
   const [assignNextDueDays, setAssignNextDueDays] = useState(7)
 
   // Optimistischer „Putzen!“ Zustand (bis Reload)
@@ -27,7 +24,6 @@ export default function TaskDetail({ apiBase, taskId }){
         api.get('/ListAssignments')
       ])
       setTasks(t||[]); setUsers(u||[]); setAssignments(a||[])
-      setVoteUserId((u||[])[0]?.id || null)
       setPutzenActiveLocal(false) // nach frischem Load übernimmt Serverwert (urgency_score)
     } catch (e) { setError(e.message) }
   }
@@ -79,19 +75,25 @@ export default function TaskDetail({ apiBase, taskId }){
   }, [task, done])
 
   // Aktionen
-  const markDone = async (assignmentId) => {
-    const fd = new FormData(); fd.append('assignment_id', assignmentId)
+  const pendingAssignment = useMemo(()=> pending[0] || null, [pending])
+
+  const markDone = async () => {
+    if (!pendingAssignment) return
+    const fd = new FormData(); fd.append('assignment_id', String(pendingAssignment.id))
     await fetch(apiBase + '/MarkTaskDone', { method:'POST', body: fd })
     await load()
   }
 
-  // „Putzen!“ nur nach oben, kein Down
+  // „Putzen!“ – ohne Dropdown: wir nehmen, wenn möglich, den aktuellen Bearbeiter,
+  // sonst den ersten User als Fallback (nur für Logging / Actor-ID).
   const putzen = async () => {
-    if(!task || !voteUserId) return
+    if(!task) return
+    const actorId = currentAssigneeId || users[0]?.id
+    if(!actorId) return
     setPutzenActiveLocal(true) // sofort visuelles Feedback
     const fd = new FormData()
-    fd.append('task_id', task.id)
-    fd.append('user_id', voteUserId)
+    fd.append('task_id', String(task.id))
+    fd.append('user_id', String(actorId))
     await fetch(apiBase + '/VoteTaskUrgencyUp_do', { method:'POST', body: fd })
     await load()
   }
@@ -99,8 +101,8 @@ export default function TaskDetail({ apiBase, taskId }){
   const assignNextNow = async () => {
     if(!task || !nextUserId) return
     const fd = new FormData()
-    fd.append('task_id', task.id)
-    fd.append('user_id', nextUserId)
+    fd.append('task_id', String(task.id))
+    fd.append('user_id', String(nextUserId))
     fd.append('due_days', String(assignNextDueDays || 7))
     await fetch(apiBase + '/AssignTaskToUser', { method:'POST', body: fd })
     await load()
@@ -114,66 +116,74 @@ export default function TaskDetail({ apiBase, taskId }){
 
   const isPutzenActive = putzenActiveLocal || Number(task.urgency_score) > 0
 
+  const doArchive = async () => {
+    if (!task) return
+    setBusy(true)
+    const fd = new FormData()
+    fd.append('task_id', String(task.id))
+    await fetch(apiBase + '/ArchiveTask', { method: 'POST', body: fd })
+    setBusy(false)
+    await load()
+  }
 
-const doArchive = async () => {
-  if (!task) return
-  setBusy(true)
-  const fd = new FormData()
-  fd.append('task_id', String(task.id))
-  await fetch(apiBase + '/ArchiveTask', { method: 'POST', body: fd })
-  setBusy(false)
-  await load()              // deine bestehende Reload-Funktion
-}
+  const doUnarchive = async () => {
+    if (!task) return
+    setBusy(true)
+    const fd = new FormData()
+    fd.append('task_id', String(task.id))
+    await fetch(apiBase + '/UnarchiveTask', { method: 'POST', body: fd })
+    setBusy(false)
+    await load()
+  }
 
-const doUnarchive = async () => {
-  if (!task) return
-  setBusy(true)
-  const fd = new FormData()
-  fd.append('task_id', String(task.id))
-  await fetch(apiBase + '/UnarchiveTask', { method: 'POST', body: fd })
-  setBusy(false)
-  await load()
-}
-
-const doDelete = async () => {
-  if (!task) return
-  if (!confirm('Diesen Task unwiderruflich löschen?')) return
-  setBusy(true)
-  const fd = new FormData()
-  fd.append('task_id', String(task.id))
-  await fetch(apiBase + '/DeleteTask', { method: 'POST', body: fd })
-  setBusy(false)
-  // nach dem Löschen zurück zur Übersicht
-  window.location.hash = '#/tasks'
-}
-
+  const doDelete = async () => {
+    if (!task) return
+    if (!confirm('Diesen Task unwiderruflich löschen?')) return
+    setBusy(true)
+    const fd = new FormData()
+    fd.append('task_id', String(task.id))
+    await fetch(apiBase + '/DeleteTask', { method: 'POST', body: fd })
+    setBusy(false)
+    window.location.hash = '#/tasks'
+  }
 
   return (
     <PageShell
       title={`Task #${task.id} – ${task.title}`}
       right={
-        <div className="flex items-center gap-2">
-          <select value={voteUserId??''} onChange={(e)=>setVoteUserId(Number(e.target.value)||null)} className="border rounded-lg px-2 py-1 text-sm">
-            {users.map(u=> <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-          <button onClick={putzen} className="px-2 py-1 rounded bg-red-600 text-white text-sm font-semibold">Putzen!</button>
-
-        {!task?.archived ? (
-          <button onClick={doArchive} className="px-3 py-2 rounded-lg bg-amber-600 text-white" disabled={busy}>
-            Archivieren
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={putzen}
+            className="px-3 py-2 rounded-lg bg-red-600 text-white font-semibold"
+            title="Jetzt priorisieren"
+          >
+            Putzen!
           </button>
-        ) : (
-          <button onClick={doUnarchive} className="px-3 py-2 rounded-lg bg-slate-600 text-white" disabled={busy}>
-            Wieder aktivieren
+
+          {!task?.archived ? (
+            <button onClick={doArchive} className="px-3 py-2 rounded-lg bg-amber-600 text-white" disabled={busy}>
+              Archivieren
+            </button>
+          ) : (
+            <button onClick={doUnarchive} className="px-3 py-2 rounded-lg bg-slate-600 text-white" disabled={busy}>
+              Wieder aktivieren
+            </button>
+          )}
+
+          <button onClick={doDelete} className="px-3 py-2 rounded-lg bg-red-700 text-white" disabled={busy}>
+            Löschen
           </button>
-        )}
 
-        <button onClick={doDelete} className="px-3 py-2 rounded-lg bg-red-700 text-white" disabled={busy}>
-          Löschen
-        </button>
-
+          {/* Erledigt-Button nur, wenn ein offenes Assignment existiert */}
+          <button
+            onClick={markDone}
+            disabled={!pendingAssignment}
+            className={`px-3 py-2 rounded-lg ${pendingAssignment ? 'bg-emerald-600 text-white' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
+            title={pendingAssignment ? 'Als erledigt markieren' : 'Aktuell kein offenes Assignment'}
+          >
+            ✓ Erledigt
+          </button>
         </div>
-
       }
     >
       {error && <div className="mb-3 text-red-600">{String(error)}</div>}
@@ -186,7 +196,7 @@ const doDelete = async () => {
         </div>
       )}
 
-      {/* GERade dran – prominent */}
+      {/* Gerade dran – prominent */}
       <div className={`mb-4 p-4 rounded-xl border bg-white flex items-center gap-3 ${isPutzenActive?'border-red-500':''}`}>
         <div className="text-sm text-gray-500">Gerade dran</div>
         <div className="flex items-center gap-3 ml-3">
@@ -252,50 +262,25 @@ const doDelete = async () => {
           </div>
         )}
 
-        <div className="grid md:grid-cols-2 gap-6">
-          <div>
-            <div className="text-lg font-medium mb-2">Offene Assignments</div>
-            <div className="overflow-auto">
-              <table className="min-w-full border text-sm">
-                <thead className="bg-gray-100"><tr>
-                  <th className="p-2 border">Assign-ID</th><th className="p-2 border">User</th><th className="p-2 border">Fällig</th><th className="p-2 border">Aktionen</th>
-                </tr></thead>
-                <tbody>
-                  {pending.map(a => (
-                    <tr key={a.id} className="odd:bg-white even:bg-gray-50">
-                      <td className="p-2 border">{a.id}</td>
-                      <td className="p-2 border">{a.user_id ? nameById(a.user_id) : '—'}</td>
-                      <td className="p-2 border">{a.due_at ? `${Math.max(0, Math.ceil(daysLeft(a.due_at)))} Tage` : '—'}</td>
-                      <td className="p-2 border">
-                        <button onClick={()=>markDone(a.id)} className="px-2 py-1 rounded bg-emerald-600 text-white">Als erledigt markieren</button>
-                      </td>
-                    </tr>
-                  ))}
-                  {pending.length===0 && <tr><td className="p-2 border" colSpan={4}>Keine offenen Assignments</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div>
-            <div className="text-lg font-medium mb-2">Erledigt (kürzlich)</div>
-            <div className="overflow-auto">
-              <table className="min-w-full border text-sm">
-                <thead className="bg-gray-100"><tr>
-                  <th className="p-2 border">Assign-ID</th><th className="p-2 border">User</th><th className="p-2 border">Zeit</th>
-                </tr></thead>
-                <tbody>
-                  {done.slice(0,20).map(a => (
-                    <tr key={a.id} className="odd:bg-white even:bg-gray-50">
-                      <td className="p-2 border">{a.id}</td>
-                      <td className="p-2 border">{a.user_id ? nameById(a.user_id) : '—'}</td>
-                      <td className="p-2 border">{a.done_at ? new Date(a.done_at).toLocaleString() : '—'}</td>
-                    </tr>
-                  ))}
-                  {done.length===0 && <tr><td className="p-2 border" colSpan={3}>Noch nichts erledigt</td></tr>}
-                </tbody>
-              </table>
-            </div>
+        {/* Den „Offene Assignments“-Block entfernen – wir zeigen nur noch „Erledigt (kürzlich)“ unten */}
+        <div>
+          <div className="text-lg font-medium mb-2">Erledigt (kürzlich)</div>
+          <div className="overflow-auto">
+            <table className="min-w-full border text-sm">
+              <thead className="bg-gray-100"><tr>
+                <th className="p-2 border">Assign-ID</th><th className="p-2 border">User</th><th className="p-2 border">Zeit</th>
+              </tr></thead>
+              <tbody>
+                {done.slice(0,20).map(a => (
+                  <tr key={a.id} className="odd:bg-white even:bg-gray-50">
+                    <td className="p-2 border">{a.id}</td>
+                    <td className="p-2 border">{a.user_id ? nameById(a.user_id) : '—'}</td>
+                    <td className="p-2 border">{a.done_at ? new Date(a.done_at).toLocaleString() : '—'}</td>
+                  </tr>
+                ))}
+                {done.length===0 && <tr><td className="p-2 border" colSpan={3}>Noch nichts erledigt.</td></tr>}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
