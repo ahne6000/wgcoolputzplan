@@ -14,7 +14,10 @@ export default function CreateTask({ apiBase, embed=false }){
   const [error, setError] = useState(null)
   const [okMsg, setOkMsg] = useState('')
 
-  useEffect(()=>{ (async()=>{ try{ setUsers(await api.get('/ListAllUser')) }catch(e){ setError(e.message) } })() }, [apiBase])
+  useEffect(()=>{ (async()=>{
+    try{ setUsers(await api.get('/ListAllUser')) }
+    catch(e){ setError(e.message) }
+  })() }, [apiBase])
 
   const onSubmit = async (e) => {
     e.preventDefault(); setError(null); setOkMsg('')
@@ -25,11 +28,12 @@ export default function CreateTask({ apiBase, embed=false }){
       description: form.description?.trim() || null,
       task_type: type,
       points: Number(form.points) || 1,
-      interval_days: (type==='ROTATING' || type==='RECURRING_UNASSIGNED')
+      // Intervall jetzt auch für ONE_OFF zulassen
+      interval_days: (type==='ROTATING' || type==='RECURRING_UNASSIGNED' || type==='ONE_OFF')
         ? (form.interval_days ? Number(form.interval_days) : null)
         : null,
       rotation_user_ids: (type==='ROTATING' ? form.rotation_user_ids.map(Number) : null),
-      // Neu: RECURRING_UNASSIGNED startet sofort (jetzt), sonst null
+      // RECURRING_UNASSIGNED startet sofort
       first_due_at: (type==='RECURRING_UNASSIGNED')
         ? new Date().toISOString()
         : null,
@@ -52,7 +56,8 @@ export default function CreateTask({ apiBase, embed=false }){
     setForm(f => {
       const idx = f.rotation_user_ids.indexOf(id)
       if (idx >= 0) {
-        const arr = [...f.rotation_user_ids]; arr.splice(idx,1); return {...f, rotation_user_ids: arr}
+        const arr = [...f.rotation_user_ids]; arr.splice(idx,1)
+        return {...f, rotation_user_ids: arr}
       }
       return {...f, rotation_user_ids: [...f.rotation_user_ids, id]}
     })
@@ -65,28 +70,67 @@ export default function CreateTask({ apiBase, embed=false }){
 
       <form onSubmit={onSubmit} className="grid md:grid-cols-2 gap-4">
         <div className="space-y-3">
-          <input required value={form.title} onChange={(e)=>setForm({...form, title:e.target.value})} placeholder="Titel" className="w-full border rounded-lg px-3 py-2"/>
-          <textarea value={form.description} onChange={(e)=>setForm({...form, description:e.target.value})} placeholder="Beschreibung (optional)" className="w-full border rounded-lg px-3 py-2"/>
+          <input
+            required
+            value={form.title}
+            onChange={(e)=>setForm({...form, title:e.target.value})}
+            placeholder="Titel"
+            className="w-full border rounded-lg px-3 py-2"
+          />
+
+          <textarea
+            value={form.description}
+            onChange={(e)=>setForm({...form, description:e.target.value})}
+            placeholder="Beschreibung (optional)"
+            className="w-full border rounded-lg px-3 py-2"
+          />
 
           <div className="flex items-center gap-2">
             <label className="font-medium">Task-Typ:</label>
-            <select value={type} onChange={(e)=>setForm({...form, task_type:e.target.value})} className="border rounded-lg px-3 py-2">
+            <select
+              value={type}
+              onChange={(e)=>setForm({...form, task_type:e.target.value})}
+              className="border rounded-lg px-3 py-2"
+            >
               <option value="ROTATING">ROTATING</option>
               <option value="RECURRING_UNASSIGNED">RECURRING_UNASSIGNED</option>
               <option value="ONE_OFF">ONE_OFF</option>
             </select>
           </div>
 
-          {(type==='ROTATING' || type==='RECURRING_UNASSIGNED') && (
+          {(type==='ROTATING' || type==='RECURRING_UNASSIGNED' || type==='ONE_OFF') && (
             <div className="flex items-center gap-2">
               <label className="font-medium w-40">Intervall (Tage)</label>
-              <input type="number" value={form.interval_days} onChange={(e)=>setForm({...form, interval_days:e.target.value})} className="border rounded-lg px-3 py-2" placeholder="z. B. 7"/>
+              <input
+                type="number"
+                value={form.interval_days}
+                onChange={(e)=>setForm({...form, interval_days:e.target.value})}
+                className="border rounded-lg px-3 py-2"
+                placeholder="z. B. 7"
+              />
+            </div>
+          )}
+
+          {type==='RECURRING_UNASSIGNED' && (
+            <div className="text-sm text-gray-600">
+              Start: <span className="font-medium">sofort (Zeitpunkt des Anlegens)</span>. Nach Abschluss wird jeweils + Intervall neu geplant.
+            </div>
+          )}
+
+          {type==='ONE_OFF' && (
+            <div className="text-sm text-gray-600">
+              Fälligkeit: <span className="font-medium">ab jetzt + Intervall</span> (kein Wiederkehren).
             </div>
           )}
 
           <div className="flex items-center gap-2">
             <label className="font-medium w-40">Punkte</label>
-            <input type="number" value={form.points} onChange={(e)=>setForm({...form, points:e.target.value})} className="border rounded-lg px-3 py-2"/>
+            <input
+              type="number"
+              value={form.points}
+              onChange={(e)=>setForm({...form, points:e.target.value})}
+              className="border rounded-lg px-3 py-2"
+            />
           </div>
         </div>
 
@@ -109,19 +153,9 @@ export default function CreateTask({ apiBase, embed=false }){
                   )
                 })}
               </div>
-              <div className="mt-2 text-sm">Reihenfolge: {form.rotation_user_ids.map(id=>users.find(u=>u.id===id)?.name||id).join(' → ') || '—'}</div>
-            </div>
-          )}
-
-          {type==='RECURRING_UNASSIGNED' && (
-            <div className="text-sm text-gray-600">
-              Start: <span className="font-medium">sofort (Zeitpunkt des Anlegens)</span>. Nach Abschluss wird jeweils + Intervall neu geplant.
-            </div>
-          )}
-
-          {type==='ONE_OFF' && (
-            <div className="text-sm text-gray-600">
-              Einmalige Aufgabe – keine Restlaufzeit / Fälligkeit.
+              <div className="mt-2 text-sm">
+                Reihenfolge: {form.rotation_user_ids.map(id=>users.find(u=>u.id===id)?.name||id).join(' → ') || '—'}
+              </div>
             </div>
           )}
         </div>

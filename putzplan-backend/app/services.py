@@ -77,7 +77,6 @@ def compute_next_assignee_user_id(db: Session, task: Task) -> Optional[int]:
 
 
 # --- Fälligkeit / Resttage ---------------------------------------------------
-
 def compute_rest_days(task: Task) -> Optional[int]:
     if not task.next_due_at:
         return None

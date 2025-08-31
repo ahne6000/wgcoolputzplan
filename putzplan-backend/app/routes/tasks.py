@@ -10,7 +10,6 @@ from ..services import (
     compute_rest_days,
     utcnow_naive,
     create_pending_assignment,
-    next_user_in_rotation,
     archive_task as archive_task_core
 )
 
@@ -46,9 +45,6 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db)):
     # Fälligkeit initial bestimmen:
     # ONE_OFF ohne angegebenes Intervall → Standard 7 Tage
     interval = data.interval_days
-    if interval is None and data.task_type == TaskType.ONE_OFF:
-        interval = 7
-
     first_due = data.first_due_at
     if not first_due:
         if interval and interval > 0:
@@ -58,6 +54,7 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db)):
             first_due = utcnow_naive()
         else:
             first_due = None
+
 
     # Task anlegen
     task = Task(
@@ -69,6 +66,11 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db)):
         rotation_user_ids=data.rotation_user_ids if data.task_type == TaskType.ROTATING else None,
         next_due_at=first_due
     )
+
+    if task.task_type == TaskType.ONE_OFF and (task.interval_days or 0) > 0 and not first_due:
+        first_due = utcnow_naive() + timedelta(days=int(task.interval_days))
+        task.next_due_at = first_due
+
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -85,9 +87,13 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db)):
         due = task.next_due_at or utcnow_naive()
         create_pending_assignment(db, task, user_id=first_uid, due_at=due)
 
-    else:
-        # ONE_OFF (oder ohne Rotation): claimbares Pending mit Fälligkeitsdatum (falls gesetzt)
+    elif task.task_type == TaskType.ONE_OFF:
+        # einmalig, claimbar; falls Intervall gesetzt wurde, haben wir next_due_at
         create_pending_assignment(db, task, user_id=None, due_at=task.next_due_at)
+
+    else:
+        # sonstiger Fall (z. B. ROTATING ohne Liste): claimbar, ohne Fälligkeitsdatum
+        create_pending_assignment(db, task, user_id=None, due_at=None)
 
     # Response anreichern
     d = TaskOut.from_orm(task).dict() if hasattr(TaskOut, "from_orm") else TaskOut.model_validate(task).model_dump()
@@ -166,8 +172,15 @@ def unarchive_task(task_id: int = Form(...), db: Session = Depends(get_db)):
             uid = peek_next_rotating_user(db, t, consume_skips=False)
             create_pending_assignment(db, t, user_id=uid, due_at=due)
         else:
-            # ONE_OFF oder sonstige Fälle: unassigned Pending erlauben (claimbar)
-            create_pending_assignment(db, t, user_id=None, due_at=None)
+            # ONE_OFF oder sonstige: wenn möglich mit due_at neu starten
+            if t.task_type == TaskType.ONE_OFF:
+                due = t.next_due_at
+                if not due and (t.interval_days or 0) > 0:
+                    due = utcnow_naive() + timedelta(days=int(t.interval_days))
+                    t.next_due_at = due
+                create_pending_assignment(db, t, user_id=None, due_at=due)
+            else:
+                create_pending_assignment(db, t, user_id=None, due_at=None)
 
     db.commit()
     return {"ok": True}
