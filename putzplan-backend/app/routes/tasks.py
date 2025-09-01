@@ -10,7 +10,12 @@ from ..services import (
     compute_rest_days,
     utcnow_naive,
     create_pending_assignment,
-    archive_task as archive_task_core
+    archive_task as archive_task_core,
+    log as app_log,
+    get_pending_assignments,
+    plan_next_due_for_task,
+    peek_next_rotating_user,
+    is_one_off,
 )
 
 
@@ -115,22 +120,22 @@ def edit_task(data: TaskEdit, db: Session = Depends(get_db)):
 
 @router.post("/VoteTaskUrgencyUp_do")
 def vote_up(task_id: int = Form(...), user_id: int = Form(...), db: Session = Depends(get_db)):
-    from ..services import log
+
     t = db.query(Task).get(int(task_id))
     if not t: raise HTTPException(404, "Task not found")
     t.urgency_score += 1
     db.commit()
-    log(db, "URG_UP", actor_user_id=int(user_id), details={"task_id": t.id, "delta": +1}, undo_data={"task_id": t.id, "delta_was": +1})
+    app_log(db, "URG_UP", actor_user_id=int(user_id), details={"task_id": t.id, "delta": +1}, undo_data={"task_id": t.id, "delta_was": +1})
     return {"ok": True, "urgency": t.urgency_score}
 
 @router.post("/VoteTaskUrgencyDown_do")
 def vote_down(task_id: int = Form(...), user_id: int = Form(...), db: Session = Depends(get_db)):
-    from ..services import log
+
     t = db.query(Task).get(int(task_id))
     if not t: raise HTTPException(404, "Task not found")
     t.urgency_score -= 1
     db.commit()
-    log(db, "URG_DOWN", actor_user_id=int(user_id), details={"task_id": t.id, "delta": -1}, undo_data={"task_id": t.id, "delta_was": -1})
+    app_log(db, "URG_DOWN", actor_user_id=int(user_id), details={"task_id": t.id, "delta": -1}, undo_data={"task_id": t.id, "delta_was": -1})
     return {"ok": True, "urgency": t.urgency_score}
 
 @router.post("/ArchiveTask")
@@ -152,14 +157,7 @@ def unarchive_task(task_id: int = Form(...), db: Session = Depends(get_db)):
 
     # Nach dem Reaktivieren: wieder in einen zuweisbaren Zustand bringen,
     # falls kein Pending existiert.
-    from ..services import (
-        utcnow_naive,
-        get_pending_assignments,
-        plan_next_due_for_task,
-        create_pending_assignment,
-        peek_next_rotating_user,
-        is_one_off,
-    )
+
     pendings = get_pending_assignments(db, t.id)
     if not pendings:
         if t.task_type == TaskType.RECURRING_UNASSIGNED:
@@ -194,3 +192,85 @@ def delete_task(task_id: int = Form(...), db: Session = Depends(get_db)):
     db.delete(t)
     db.commit()
     return {"ok": True}
+
+
+@router.post("/ShiftTaskDueDays")
+def shift_task_due_days(
+    task_id: int = Form(...),
+    delta_days: int = Form(...),
+    db: Session = Depends(get_db)
+):
+
+    t = db.query(Task).get(int(task_id))
+    if not t:
+        raise HTTPException(404, "Task not found")
+
+    # Ausgangsbasis
+    old = t.next_due_at or utcnow_naive()
+    delta = timedelta(days=int(delta_days))
+    t.next_due_at = old + delta
+
+    # Alle offenen Assignments des Tasks gleich mitverschieben
+    pendings = db.query(TaskAssignment)\
+        .filter(TaskAssignment.task_id == t.id,
+                TaskAssignment.status == AssignmentStatus.PENDING)\
+        .all()
+    for a in pendings:
+        if a.due_at:
+            a.due_at = a.due_at + delta
+
+    db.commit()
+
+    try:
+        app_log(db, "DUE_SHIFT", actor_user_id=None,
+            details={"task_id": t.id, "delta_days": int(delta_days), "new_next_due_at": t.next_due_at.isoformat()},
+            undo_data={"task_id": t.id, "prev_next_due_at": old.isoformat()})
+    except Exception:
+        pass
+
+    return {"ok": True, "next_due_at": t.next_due_at.isoformat()}
+
+
+@router.post("/SetTaskNextDueAt")
+def set_task_next_due_at(
+    task_id: int = Form(...),
+    next_due_at: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    t = db.query(Task).get(int(task_id))
+    if not t:
+        raise HTTPException(404, "Task not found")
+
+    # ISO einlesen; Awareness -> nach UTC-naiv
+    try:
+        dt = datetime.fromisoformat(next_due_at)
+    except Exception:
+        raise HTTPException(400, "Invalid datetime format (ISO expected)")
+
+    prev = t.next_due_at or utcnow_naive()
+
+    if dt.tzinfo:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+    # Delta berechnen, um offene Assignments proportional zu verschieben
+    delta = dt - prev
+    t.next_due_at = dt
+
+    pendings = db.query(TaskAssignment)\
+        .filter(TaskAssignment.task_id == t.id,
+                TaskAssignment.status == AssignmentStatus.PENDING)\
+        .all()
+    for a in pendings:
+        if a.due_at:
+            a.due_at = a.due_at + delta
+
+    db.commit()
+
+    try:
+        app_log(db, "DUE_SET_ABSOLUTE", actor_user_id=None,
+            details={"task_id": t.id, "new_next_due_at": t.next_due_at.isoformat()},
+            undo_data={"task_id": t.id, "prev_next_due_at": prev.isoformat()})
+    except Exception:
+        pass
+
+    return {"ok": True, "next_due_at": t.next_due_at.isoformat()}

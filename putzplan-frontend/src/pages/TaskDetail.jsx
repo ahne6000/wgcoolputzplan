@@ -95,6 +95,33 @@ const shiftDue = async (delta) => {
   await load()
 }
 
+const [dueDateInput, setDueDateInput] = useState('')
+useEffect(()=>{
+  if (task?.next_due_at) {
+    const d = new Date(task.next_due_at)
+    // HTML date erwartet YYYY-MM-DD (lokal)
+    setDueDateInput(d.toISOString().slice(0,10))
+  } else {
+    setDueDateInput('')
+  }
+}, [task?.id, task?.next_due_at])
+
+const setDueAbsolute = async () => {
+  if (!task || !dueDateInput) return
+  // Uhrzeit der bisherigen Due-Zeit beibehalten (oder 09:00 falls keine)
+  let base = task.next_due_at ? new Date(task.next_due_at) : new Date()
+  const hh = base.getUTCHours().toString().padStart(2,'0')
+  const mm = base.getUTCMinutes().toString().padStart(2,'0')
+  const iso = `${dueDateInput}T${hh}:${mm}:00Z` // UTC
+  const fd = new FormData()
+  fd.append('task_id', String(task.id))
+  fd.append('next_due_at', iso)
+  await fetch(apiBase + '/SetTaskNextDueAt', { method:'POST', body: fd })
+  await load()
+}
+
+
+
   // „Putzen!“ – ohne Dropdown: wir nehmen, wenn möglich, den aktuellen Bearbeiter,
   // sonst den ersten User als Fallback (nur für Logging / Actor-ID).
   const putzen = async () => {
@@ -164,6 +191,24 @@ const shiftDue = async (delta) => {
       title={`Task #${task.id} – ${task.title}`}
       right={
         <div className="flex flex-wrap items-center gap-2">
+
+
+                    <div className="hidden md:flex items-center gap-2 mr-4">
+          <button onClick={()=>shiftDue(-1)} className="px-2 py-1 rounded border" title="−1 Tag">−1d</button>
+          <button onClick={()=>shiftDue(+1)} className="px-2 py-1 rounded border" title="+1 Tag">+1d</button>
+
+          <input
+            type="date"
+            value={dueDateInput}
+            onChange={(e)=>setDueDateInput(e.target.value)}
+            className="border rounded px-2 py-1"
+          />
+          <button onClick={setDueAbsolute} className="px-2 py-1 rounded bg-indigo-600 text-white" title="Datum setzen">
+            Setzen
+          </button>
+        </div>
+
+
           <button
             onClick={putzen}
             className="px-3 py-2 rounded-lg bg-red-600 text-white font-semibold"
