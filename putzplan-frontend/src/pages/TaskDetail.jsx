@@ -3,6 +3,7 @@ import PageShell from '../components/PageShell'
 import Avatar from '../components/Avatar'
 import { useApi } from '../utils/api'
 import { daysLeft, DueBadge } from '../utils/due.jsx'
+import { showUndo } from '../utils/undo'
 
 export default function TaskDetail({ apiBase, taskId }){
   const api = useApi(apiBase)
@@ -81,8 +82,18 @@ export default function TaskDetail({ apiBase, taskId }){
     if (!pendingAssignment) return
     const fd = new FormData(); fd.append('assignment_id', String(pendingAssignment.id))
     await fetch(apiBase + '/MarkTaskDone', { method:'POST', body: fd })
+    showUndo('Als erledigt markiert – rückgängig?')
     await load()
   }
+
+const shiftDue = async (delta) => {
+  if (!task) return
+  const fd = new FormData()
+  fd.append('task_id', String(task.id))
+  fd.append('delta_days', String(delta))
+  await fetch(apiBase + '/ShiftTaskDueDays', { method:'POST', body: fd })
+  await load()
+}
 
   // „Putzen!“ – ohne Dropdown: wir nehmen, wenn möglich, den aktuellen Bearbeiter,
   // sonst den ersten User als Fallback (nur für Logging / Actor-ID).
@@ -95,6 +106,7 @@ export default function TaskDetail({ apiBase, taskId }){
     fd.append('task_id', String(task.id))
     fd.append('user_id', String(actorId))
     await fetch(apiBase + '/VoteTaskUrgencyUp_do', { method:'POST', body: fd })
+    showUndo('Priorisierung gesetzt – rückgängig?')
     await load()
   }
 

@@ -6,6 +6,7 @@ import { useApi } from '../utils/api'
 import { dueGradient, daysLeft } from '../utils/due.jsx'
 import { navTo } from '../utils/router'
 import { getCurrentUserId, setCurrentUserId } from '../utils/currentUser'
+import { showUndo } from '../utils/undo'
 
 export default function TasksOverview({ apiBase }){
   const api = useApi(apiBase)
@@ -68,6 +69,7 @@ export default function TasksOverview({ apiBase }){
     const fd = new FormData()
     fd.append('assignment_id', String(a.id))
     await fetch(apiBase + '/MarkTaskDone', { method:'POST', body: fd })
+    showUndo('Als erledigt markiert – rückgängig?')
     await load()
   }
 
@@ -80,6 +82,7 @@ export default function TasksOverview({ apiBase }){
     fd.append('task_id', taskId)
     fd.append('user_id', userId)
     await fetch(apiBase + '/VoteTaskUrgencyUp_do', { method:'POST', body: fd })
+    showUndo('Priorisierung gesetzt – rückgängig?')
     await load()
   }
 

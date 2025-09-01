@@ -11,8 +11,9 @@ from .models import RotationOrderTemp
 from .models import (
     Task, TaskType,
     TaskAssignment, AssignmentStatus,
-    LogEntry, User,
+    LogEntry, User
 )
+
 
 # --- Zeit-Helper -------------------------------------------------------------
 
@@ -317,3 +318,99 @@ def _to_jsonable(o):
     except Exception:
         # Fallback: String-Repräsentation
         return str(o)
+
+
+# --- Undo / Reverse helpers -----------------------------------
+
+
+def _parse_iso_or_none(val):
+    if not val:
+        return None
+    if isinstance(val, str):
+        try:
+            return datetime.fromisoformat(val)
+        except Exception:
+            return None
+    return val  # falls schon datetime
+
+def reverse_log_entry(db: Session, entry: LogEntry):
+    """
+    Macht eine Log-Aktion rückgängig auf Basis von entry.action und entry.undo_data.
+    Unterstützt: MARK_DONE, URG_UP, URG_DOWN, (einfaches) ARCHIVE_TASK.
+    """
+    action = entry.action or ""
+    ud = entry.undo_data or {}
+
+    if action == "MARK_DONE":
+        a_id = ud.get("assignment_id")
+        t_id = ud.get("task_id")
+        points = ud.get("points") or 0
+        prev_due = _parse_iso_or_none(ud.get("prev_next_due_at"))
+
+        a = db.query(TaskAssignment).get(a_id) if a_id else None
+        t = db.query(Task).get(t_id) if t_id else None
+
+        # Assignment wieder auf PENDING setzen
+        if a and a.status == AssignmentStatus.DONE:
+            a.status = AssignmentStatus.PENDING
+            a.done_at = None
+
+        # Task-Zustand zurückdrehen
+        if t and prev_due is not None:
+            t.next_due_at = prev_due
+
+        # Falls ONE_OFF automatisch archiviert wurde: pragmatisch reaktivieren,
+        # wenn es zeitlich plausibel ist (nach der ursprünglichen Aktion).
+        if t and t.task_type == TaskType.ONE_OFF and t.archived:
+            t.archived = False
+            t.archived_at = None
+
+        # Credits zurücknehmen
+        if a and a.user_id:
+            u = db.query(User).get(a.user_id)
+            if u:
+                u.credits = (u.credits or 0) - int(points)
+
+    elif action == "URG_UP":
+        # Dringlichkeit zurücknehmen
+        t_id = (ud.get("task_id") if ud.get("task_id") else (entry.details or {}).get("task_id"))
+        delta = int(ud.get("delta_was", 1))
+        t = db.query(Task).get(t_id) if t_id else None
+        if t:
+            t.urgency_score = int(t.urgency_score or 0) - delta
+
+    elif action == "URG_DOWN":
+        t_id = (ud.get("task_id") if ud.get("task_id") else (entry.details or {}).get("task_id"))
+        delta = abs(int(ud.get("delta_was", 1)))
+        t = db.query(Task).get(t_id) if t_id else None
+        if t:
+            t.urgency_score = int(t.urgency_score or 0) + delta
+
+    elif action == "ARCHIVE_TASK":
+        # ganz schlicht: wieder aktivieren
+        t_id = (ud.get("task_id") if ud.get("task_id") else (entry.details or {}).get("task_id"))
+        t = db.query(Task).get(t_id) if t_id else None
+        if t:
+            t.archived = False
+            t.archived_at = None
+
+    else:
+        # Nicht-unterstützte Aktionen ignorieren
+        pass
+
+    entry.reversed_at = utcnow_naive()
+    db.commit()
+
+def find_last_undoable_log(db: Session, window_sec: int = 60) -> LogEntry | None:
+    cutoff = utcnow_naive() - timedelta(seconds=window_sec)
+    undoable = ("MARK_DONE", "URG_UP", "URG_DOWN", "ARCHIVE_TASK")
+    q = (
+        db.query(LogEntry)
+        .filter(LogEntry.reversed_at == None)
+        .filter(LogEntry.action.in_(undoable))
+        .order_by(LogEntry.id.desc())
+    )
+    last = q.first()
+    if last and (last.timestamp is None or last.timestamp >= cutoff):
+        return last
+    return None

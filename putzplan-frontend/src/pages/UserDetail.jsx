@@ -7,6 +7,7 @@ import { daysLeft, dueGradient, DueBadge } from '../utils/due.jsx'
 import { navTo } from '../utils/router'
 import Stats from '../components/Stats'
 import CookingMiniPanel from '../components/CookingMiniPanel'
+import { showUndo } from '../utils/undo'
 
 
 export default function UserDetail({ apiBase, userId }){
@@ -59,6 +60,7 @@ export default function UserDetail({ apiBase, userId }){
   const markDone = async (assignmentId) => {
     const fd = new FormData(); fd.append('assignment_id', String(assignmentId))
     await fetch(apiBase + '/MarkTaskDone', { method:'POST', body: fd })
+    showUndo('Als erledigt markiert – rückgängig?')
     await load()
   }
   const putzen = async (taskId) => {
@@ -67,6 +69,7 @@ export default function UserDetail({ apiBase, userId }){
     fd.append('task_id', String(taskId))
     fd.append('user_id', String(userId))
     await fetch(apiBase + '/VoteTaskUrgencyUp_do', { method:'POST', body: fd })
+       showUndo('Priorisierung gesetzt – rückgängig?')
     await load()
   }
 

@@ -12,6 +12,7 @@ import { parseRoute, ensureInitialHash } from './utils/router'
 import { getDefaultApiBase } from './utils/api'
 import Boerse from './pages/Boerse.jsx'
 import Kochen from './pages/Kochen.jsx'
+import UndoToast from './components/UndoToast'
 
 
 export default function App(){
@@ -49,6 +50,7 @@ export default function App(){
       <Header onMenu={()=>setSidebarOpen(true)} />
       <Sidebar current={currentKey} apiBase={apiBase} open={sidebarOpen} setOpen={setSidebarOpen} />
       {page}
+      <UndoToast apiBase={apiBase} /> {/* <— hier */}
     </div>
   )
 }
