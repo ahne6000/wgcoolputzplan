@@ -93,7 +93,7 @@ def plan_next_due_for_task(task: Task):
         task.next_due_at = utcnow_naive() + timedelta(days=int(task.interval_days))
 
 # --- Erzeuge (sauberes) Pending-Assignment ----------------------------------
-
+'''
 def create_pending_assignment(db: Session, task: Task, user_id: Optional[int], due_at: Optional[datetime]) -> TaskAssignment:
     """
     Erzeugt EIN neues offenes Assignment. Falls Altlasten existieren (mehrere PENDING),
@@ -106,7 +106,7 @@ def create_pending_assignment(db: Session, task: Task, user_id: Optional[int], d
     a = TaskAssignment(task_id=task.id, user_id=user_id, status=AssignmentStatus.PENDING, due_at=due_at)
     db.add(a); db.commit(); db.refresh(a)
     return a
-
+'''
 # --- Logging + Reverse -------------------------------------------------------
 
 def log(db: Session, action: str, actor_user_id: int | None = None, *,
@@ -272,14 +272,14 @@ def tick_one_cycle_swap(db: Session, task: Task) -> None:
         task.rotation_user_ids = list(row.original_order or [])
         db.delete(row)
     db.commit()
-
+'''
 def create_pending_assignment(db: Session, task: Task, user_id: Optional[int], due_at: Optional[datetime]) -> Optional[TaskAssignment]:
     if getattr(task, "archived", False):
         return None
     a = TaskAssignment(task_id=task.id, user_id=user_id, status=AssignmentStatus.PENDING, due_at=due_at)
     db.add(a); db.commit(); db.refresh(a)
     return a
-
+'''
 def is_one_off(task: Task) -> bool:
     """Erkennt ONE_OFF robust, auch wenn alte Daten 'ONE_TIME' o.ä. enthalten."""
     tt = getattr(task, "task_type", None)
@@ -414,3 +414,61 @@ def find_last_undoable_log(db: Session, window_sec: int = 60) -> LogEntry | None
     if last and (last.timestamp is None or last.timestamp >= cutoff):
         return last
     return None
+
+
+# --- Consolidation: max. 1 PENDING pro Task -------------------------------
+
+def consolidate_pendings(db: Session, task_id: int, keep_id: int | None = None) -> int | None:
+    """
+    Sorgt dafür, dass es pro Task höchstens EIN PENDING gibt.
+    - Wenn keep_id gesetzt ist, bleibt genau dieses PENDING erhalten.
+    - Sonst wählen wir das „beste“ PENDING (früheste due_at, dann kleinste id).
+    Alle übrigen werden auf CANCELLED gesetzt.
+    Returns: id des behaltenen PENDINGs (oder None, wenn keins existiert).
+    """
+    pendings = (
+        db.query(TaskAssignment)
+          .filter(TaskAssignment.task_id == task_id,
+                  TaskAssignment.status == AssignmentStatus.PENDING)
+          .order_by(
+              TaskAssignment.due_at.is_(None).asc(),  # due_at vorhanden hat Vorrang
+              TaskAssignment.due_at.asc(),
+              TaskAssignment.id.asc(),
+          )
+          .all()
+    )
+    if not pendings:
+        return None
+
+    if keep_id is not None:
+        keeper = next((a for a in pendings if a.id == keep_id), None)
+        if not keeper:
+            # Wenn keep_id nicht unter den Pendings ist, fallen wir auf Standardauswahl zurück
+            keeper = pendings[0]
+    else:
+        keeper = pendings[0]
+
+    for a in pendings:
+        if a.id == keeper.id:
+            continue
+        a.status = AssignmentStatus.CANCELLED
+        a.done_at = utcnow_naive()  # wir haben kein cancelled_at Feld
+    db.commit()
+    return keeper.id
+
+
+# --- Erzeuge (sauberes) Pending-Assignment ---------------------------------
+
+def create_pending_assignment(db: Session, task: Task, user_id: Optional[int], due_at: Optional[datetime]) -> Optional[TaskAssignment]:
+    """
+    Erzeugt EIN neues offenes Assignment. Vorher wird garantiert: max. 1 PENDING je Task.
+    (Killt Altlasten, falls sie existieren.)
+    """
+    if getattr(task, "archived", False):
+        return None
+    # Vor dem Anlegen sicherstellen, dass keine doppelten PENDINGs existieren
+    consolidate_pendings(db, task.id)
+
+    a = TaskAssignment(task_id=task.id, user_id=user_id, status=AssignmentStatus.PENDING, due_at=due_at)
+    db.add(a); db.commit(); db.refresh(a)
+    return a

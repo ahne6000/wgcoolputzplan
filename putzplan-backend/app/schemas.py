@@ -2,6 +2,7 @@ from typing import Optional, List, Any
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, ConfigDict
+from .models import AssignmentStatus
 
 # Pydantic v1
 try:
@@ -20,9 +21,6 @@ class TaskType(str, Enum):
     RECURRING_UNASSIGNED = "RECURRING_UNASSIGNED"
     ONE_OFF = "ONE_OFF"
 
-class AssignmentStatus(str, Enum):
-    PENDING = "PENDING"
-    DONE = "DONE"
 
 # Users
 class UserOut(ConfigORM):

@@ -12,8 +12,12 @@ from ..services import (
     log,
     create_pending_assignment,         # falls genutzt
     is_one_off,
-    archive_task as archive_task_core
+    archive_task as archive_task_core,
+    consolidate_pendings
 )
+
+
+
 
 router = APIRouter()
 
@@ -82,6 +86,9 @@ def mark_task_done(
     user = db.query(User).get(a.user_id) if a.user_id else None
     if not task:
         raise HTTPException(404, "Task not found")
+
+    # --- Guard: sicherstellen, dass es nicht mehrere PENDINGS gibt (und dieses hier behalten)
+    consolidate_pendings(db, task.id, keep_id=a.id)
 
     prev_due = task.next_due_at
 

@@ -2,15 +2,20 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
 from pathlib import Path
 import uuid
-
+from pydantic import BaseModel
 from ..database import get_db
 from ..models import User
 from ..schemas import UserOut, UserCreate, AmountIn
+from ..services import log as app_log
 
 router = APIRouter()
 
 UPLOAD_DIR = Path("static/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+class UserEdit(BaseModel):
+    id: int
+    name: str
 
 @router.get("/ListAllUser", response_model=list[UserOut])
 def list_all_users(db: Session = Depends(get_db)):
@@ -59,3 +64,20 @@ def subtract_user_credit(user_id: int, amt: AmountIn, db: Session = Depends(get_
     db.commit()
     log(db, "SUB_CREDIT", actor_user_id=None, details={"user_id": user_id, "amount": delta}, undo_data={"user_id": user_id, "delta_was": -delta})
     return {"ok": True, "credits": u.credits}
+
+@router.patch("/EditUser")
+def edit_user(data: UserEdit, db: Session = Depends(get_db)):
+    u = db.query(User).get(int(data.id))
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    new_name = (data.name or "").strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Name must not be empty")
+    u.name = new_name
+    db.commit()
+
+    # nach db.commit():
+    app_log(db, "EDIT_USER", actor_user_id=None,
+            details={"user_id": u.id, "new_name": u.name})
+
+    return {"ok": True, "id": u.id, "name": u.name}

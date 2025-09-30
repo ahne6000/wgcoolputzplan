@@ -17,6 +17,7 @@ class TaskType(str, Enum):
 class AssignmentStatus(str, Enum):
     PENDING = "PENDING"
     DONE = "DONE"
+    CANCELLED = "CANCELLED"
 
 class User(Base):
     __tablename__ = "users"
