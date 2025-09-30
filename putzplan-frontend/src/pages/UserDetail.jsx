@@ -74,23 +74,34 @@ export default function UserDetail({ apiBase, userId }){
   }
 
   // ---- Stats: Erwartungswert (Soll) berechnen ----
-  function expectedPerWeekPerUser(allTasks, usersCount){
-    const uCount = Math.max(1, Number(usersCount||0))
-    let sum = 0
-    for (const t of allTasks){
-      const pts = Number(t.points || 0)
-      const every = Number(t.interval_days || 0)
-      if (!every || t.task_type === 'ONE_OFF') continue
-      const weekly = pts * (7 / every)
-      if (t.task_type === 'ROTATING'){
+// Erwarte pro Woche pro User – wahlweise nur ROTATING oder alle (ROTATING + RECURRING_UNASSIGNED)
+function expectedPerWeekPerUser(allTasks, usersCount, include = 'rotating') {
+  const uCount = Math.max(1, Number(usersCount || 0))
+  let sum = 0
+
+  for (const t of allTasks || []) {
+    const pts = Number(t.points || 0)
+    const every = Number(t.interval_days || 0)
+    if (!every || t.task_type === 'ONE_OFF') continue
+
+    const weekly = pts * (7 / every)
+
+    if (include === 'rotating') {
+      if (t.task_type === 'ROTATING') {
         const n = Math.max(1, (t.rotation_user_ids?.length || 0))
         sum += weekly / n
-      } else if (t.task_type === 'RECURRING_UNASSIGNED'){
+      }
+    } else if (include === 'all') {
+      if (t.task_type === 'ROTATING') {
+        const n = Math.max(1, (t.rotation_user_ids?.length || 0))
+        sum += weekly / n
+      } else if (t.task_type === 'RECURRING_UNASSIGNED') {
         sum += weekly / uCount
       }
     }
-    return sum
   }
+  return sum
+}
   const expectedWeek = useMemo(()=> expectedPerWeekPerUser(tasks, allUsers.length), [tasks, allUsers.length])
 
   // Daten für Charts vorbereiten
