@@ -124,30 +124,19 @@ export default function UserDetail({ apiBase, userId }){
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid md:grid-cols-2 gap-4 mb-6">
-        <Stats
-          doneAssignments={doneForUser}
-          tasksById={tasksMap}
-          expectedPerWeekPerUser={expectedWeek}
-          mode="week"
-          weeks={8}
-        />
-        <Stats
-          doneAssignments={doneForUser}
-          tasksById={tasksMap}
-          expectedPerWeekPerUser={expectedWeek}
-          mode="day"
-          days={14}
-        />
-      </div>
-      <div className="mb-6 rounded-xl border p-3 bg-white">
-        <div className="text-sm text-gray-600">
-          Soll/Woche: <span className="font-medium">{Math.round(expectedWeek)}</span> Credits
-          <span className="mx-2">•</span>
-          Soll/Tag: <span className="font-medium">{Math.round(expectedWeek/7)}</span> Credits
+        {/* Stats */}
+        <div className="mb-6">
+          <Stats
+              doneAssignments={doneForUser}
+              tasksById={tasksMap}
+              expectedPerWeekPerUser={expectedWeek}
+              mode="week"
+              weeks={8}
+              showTrend={true}
+              trendWindow={3}
+              scaleMode="series"   // <— meist die beste UX
+          />
         </div>
-      </div>
 
 
       <div className="grid md:grid-cols-2 gap-6">
